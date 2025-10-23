@@ -1,0 +1,25 @@
+menu "IoT Protocol Configuration"
+
+    # MQTT Configuration
+    rsource "../components/mqtt_handler/Kconfig"
+
+    # CoAP Configuration
+    rsource "../components/coap_handler/Kconfig"
+
+endmenu
+
+menu "Hardware Pin Configuration"
+
+    # STM32 UART Configuration
+    rsource "../components/stm32_uart/Kconfig"
+
+    # Relay Control Configuration
+    rsource "../components/relay_control/Kconfig"
+
+    # Button Handler Configuration
+    rsource "../components/button_handler/Kconfig"
+
+    # Status LED Configuration
+    rsource "../components/wifi_manager/Kconfig"
+
+endmenu
