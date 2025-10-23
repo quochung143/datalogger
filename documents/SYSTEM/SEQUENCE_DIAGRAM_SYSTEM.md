@@ -762,4 +762,412 @@ sequenceDiagram
 
 ---
 
-*Continued in next section...*
+## 10. Chart Real-Time Update Sequence
+
+```mermaid
+sequenceDiagram
+    participant Broker as MQTT Broker
+    participant Web as Web Dashboard
+    participant MQTT as MQTT Client
+    participant Chart as Chart.js Manager
+    participant Canvas as Chart Canvas
+    participant User
+    
+    Broker->>MQTT: MQTT Message Arrives
+    Note right of Broker: datalogger/data/periodic
+    
+    MQTT->>Web: onMessage Event
+    Web->>Web: Parse JSON Payload
+    Note right of Web: {temp:25.48, hum:60.15,<br/>timestamp:1729780545}
+    
+    Web->>Web: Validate Data
+    Web->>Web: Extract Values
+    
+    Web->>Chart: chartManager.addDataPoint()
+    Chart->>Chart: Get Current Dataset
+    Chart->>Chart: Check Dataset Length
+    
+    alt Dataset > 50 Points
+        Chart->>Chart: Remove Oldest Point (shift)
+        Note right of Chart: Rolling Window (50 points)
+    end
+    
+    Chart->>Chart: Add New Data Point
+    Note right of Chart: Temperature: 25.48<br/>Humidity: 60.15<br/>Time: 14:35:45
+    
+    Chart->>Chart: Format X-axis Label
+    Note right of Chart: Convert timestamp to HH:MM:SS
+    
+    Chart->>Chart: Update Chart Data
+    Chart->>Chart: chart.update('none')
+    Note right of Chart: Animation: none for real-time
+    
+    Chart->>Canvas: Render Update
+    Canvas->>Canvas: Redraw Canvas
+    Canvas->>Canvas: Draw Axes
+    Canvas->>Canvas: Draw Line (Temperature)
+    Canvas->>Canvas: Draw Line (Humidity)
+    Canvas->>Canvas: Draw Data Points
+    
+    Canvas->>User: Display Updated Chart
+    
+    Web->>Web: Update Statistics
+    Note right of Web: Recalculate Min/Max/Avg
+    Web->>User: Update Stats Panel
+    
+    Note over Broker,User: 5 seconds later...
+    
+    Broker->>MQTT: Next Message
+    Note over Web,User: Continuous updates...
+```
+
+---
+
+## 11. Data Export to CSV Sequence
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Web as Web Dashboard
+    participant Firebase as Firebase RTDB
+    participant Export as Export Handler
+    participant Browser
+    
+    User->>Web: Navigate to Data Management
+    User->>Web: Select Date Range
+    Note right of User: 2025-10-23 to 2025-10-24
+    
+    User->>Web: Click "Export to CSV"
+    
+    Web->>Export: exportToCSV(startDate, endDate)
+    Export->>Export: Show Progress Modal
+    
+    Export->>Firebase: Query Data Range
+    Note right of Export: orderByChild('timestamp')<br/>.startAt(start).endAt(end)
+    
+    Firebase-->>Export: Return 247 Records
+    
+    Export->>Export: Process Records
+    Export->>Export: Build CSV Header
+    Note right of Export: "Timestamp,Date,Time,<br/>Temperature,Humidity,Mode"
+    
+    loop For Each Record (247)
+        Export->>Export: Extract Fields
+        Export->>Export: Format Timestamp
+        Note right of Export: Unix → YYYY-MM-DD HH:MM:SS
+        
+        Export->>Export: Format Temperature
+        Note right of Export: Round to 2 decimals
+        
+        Export->>Export: Format Humidity
+        Export->>Export: Append CSV Row
+        Note right of Export: "1729780345,2025-10-24,<br/>14:35:45,25.48,60.15,periodic"
+    end
+    
+    Export->>Export: CSV String Complete
+    Export->>Export: Create Blob
+    Note right of Export: MIME: text/csv
+    
+    Export->>Export: Generate Filename
+    Note right of Export: datalogger_20251024_143545.csv
+    
+    Export->>Export: Create Object URL
+    Export->>Export: Create Download Link
+    
+    Export->>Browser: Trigger Download
+    Browser->>Browser: Show Save Dialog
+    Browser->>User: Download Started
+    
+    Export->>Export: Revoke Object URL
+    Export->>Export: Update Export Stats
+    Export->>Export: Log Export Event
+    
+    Export->>Web: Hide Progress Modal
+    Web->>User: Show Success Toast
+    Note right of User: "247 records exported"
+```
+
+---
+
+## 12. System State Synchronization Sequence
+
+```mermaid
+sequenceDiagram
+    participant STM32 as STM32 Firmware
+    participant ESP32 as ESP32 Gateway
+    participant Broker as MQTT Broker
+    participant Web as Web Dashboard
+    participant Firebase as Firebase RTDB
+    
+    Note over STM32,Firebase: Periodic State Updates (Every 30s)
+    
+    STM32->>STM32: Collect System State
+    Note right of STM32: - Uptime<br/>- Sensor Status<br/>- SD Card Status<br/>- Display Status<br/>- Periodic Mode<br/>- Buffered Count
+    
+    STM32->>ESP32: UART TX: State JSON
+    Note right of STM32: {"stm32_uptime":12345,<br/>"sensor":"OK",<br/>"sd_card":"OK",<br/>"display":"OK",<br/>"periodic":true,<br/>"buffered":0}
+    
+    ESP32->>ESP32: Receive & Parse
+    ESP32->>ESP32: Add ESP32 State
+    Note right of ESP32: - WiFi RSSI<br/>- MQTT Connected<br/>- Relay State<br/>- ESP32 Uptime<br/>- Free Heap
+    
+    ESP32->>ESP32: Merge State Objects
+    Note right of ESP32: Combined system state
+    
+    ESP32->>Broker: Publish datalogger/state
+    Note right of ESP32: {"stm32_uptime":12345,<br/>"esp32_uptime":12340,<br/>"sensor":"OK",<br/>"wifi_rssi":-52,<br/>"mqtt_connected":true,<br/>"relay_state":"OFF",<br/>"free_heap":180000}
+    
+    Broker->>Web: Deliver State
+    Web->>Web: StateManager.updateState()
+    
+    Web->>Web: Update Component Status
+    Note right of Web: STM32: OK ✓<br/>ESP32: OK ✓<br/>Sensor: OK ✓
+    
+    Web->>Web: Update WiFi Signal
+    Note right of Web: RSSI: -52dBm → Good
+    
+    Web->>Web: Update Uptime Display
+    Note right of Web: Format: 3h 25m 45s
+    
+    Web->>Web: Update Memory Status
+    Note right of Web: Free Heap: 180KB
+    
+    Web->>Firebase: Store State History
+    Note right of Firebase: /datalogger/states/<br/>{timestamp}
+    
+    Firebase-->>Web: Write Success
+    
+    Web->>Web: Trigger Health Check
+    Note right of Web: Verify all components OK
+    
+    Note over STM32,Firebase: State Synchronized
+```
+
+---
+
+## 13. MQTT Broker Restart & Recovery Sequence
+
+```mermaid
+sequenceDiagram
+    participant Broker as MQTT Broker
+    participant ESP32 as ESP32 Gateway
+    participant Web as Web Dashboard
+    participant STM32 as STM32 Firmware
+    participant Admin as System Admin
+    
+    Note over Broker,Web: System Operating Normally
+    
+    Admin->>Broker: docker restart mosquitto-broker
+    Broker->>Broker: SIGTERM Received
+    Broker->>Broker: Save Persistent Data
+    Broker->>Broker: Disconnect All Clients
+    
+    Broker->>ESP32: Connection Close
+    ESP32->>ESP32: Disconnect Event
+    ESP32->>ESP32: MQTT_EVENT_DISCONNECTED
+    ESP32->>STM32: UART: "MQTT DISCONNECTED\r\n"
+    STM32->>STM32: Set WiFi Connected = false
+    
+    Broker->>Web: WebSocket Close
+    Web->>Web: MQTT Disconnect Event
+    Web->>Web: Update UI: Disconnected
+    Web->>Web: Show Warning Banner
+    
+    Note over Broker: Container Restarting...
+    
+    Broker->>Broker: Container Stopped
+    Broker->>Broker: Container Starting
+    Broker->>Broker: Load mosquitto.conf
+    Broker->>Broker: Load Persistent Data
+    Broker->>Broker: Open Port 1883 (MQTT)
+    Broker->>Broker: Open Port 8083 (WebSocket)
+    Broker->>Broker: Broker Ready
+    
+    Note over ESP32: Auto Reconnect (5s delay)
+    
+    ESP32->>ESP32: Reconnect Timer Expires
+    ESP32->>Broker: MQTT Connect
+    Broker-->>ESP32: CONNACK (Session Present=1)
+    
+    ESP32->>Broker: Resubscribe Topics
+    Broker-->>ESP32: SUBACK
+    
+    ESP32->>STM32: UART: "MQTT CONNECTED\r\n"
+    STM32->>STM32: Set WiFi Connected = true
+    
+    Note over Web: Auto Reconnect (JavaScript)
+    
+    Web->>Broker: WebSocket Connect
+    Broker-->>Web: WebSocket Handshake OK
+    
+    Web->>Broker: MQTT Connect
+    Broker-->>Web: CONNACK
+    
+    Web->>Broker: Resubscribe datalogger/#
+    Broker-->>Web: SUBACK
+    
+    Web->>Web: Update UI: Connected
+    Web->>Web: Hide Warning Banner
+    Web->>Web: Show Success Toast
+    Note right of Web: "Reconnected to Broker"
+    
+    Note over Broker,STM32: Check for Buffered Data
+    
+    STM32->>STM32: Check SD Buffer
+    alt Buffered Data Exists
+        STM32->>STM32: Start Sync Process
+        Note right of STM32: (See Buffering Sequence)
+    else No Buffered Data
+        STM32->>STM32: Resume Normal Operation
+    end
+    
+    Note over Broker,STM32: System Fully Recovered
+```
+
+---
+
+## 14. Display Update Sequence (LCD)
+
+```mermaid
+sequenceDiagram
+    participant STM32 as STM32 Firmware
+    participant Data as Data Manager
+    participant Display as Display Controller
+    participant LCD as ILI9225 Driver
+    participant SPI as SPI1 Peripheral
+    participant Screen as Physical LCD
+    
+    STM32->>Data: New Sensor Data Available
+    Data->>Data: dataManager.data_ready = true
+    
+    STM32->>Display: display_update()
+    Display->>Display: Check Update Needed
+    
+    Display->>Data: Get Latest Data
+    Data-->>Display: Temp, Hum, Timestamp, Mode
+    
+    Display->>Display: Format Display Strings
+    Note right of Display: Temperature: "25.48°C"<br/>Humidity: "60.15%"<br/>Time: "14:35:45"<br/>Mode: "PERIODIC: ON (5s)"<br/>WiFi: "WiFi: OK"
+    
+    Display->>LCD: Clear Previous Values
+    LCD->>LCD: Calculate Coordinates
+    
+    loop For Each Display Element
+        Display->>LCD: ILI9225_DrawText()
+        LCD->>LCD: Set Text Position
+        LCD->>LCD: Select Font (Font16/Font24)
+        LCD->>LCD: Select Color (RGB565)
+        
+        loop For Each Character
+            LCD->>LCD: Get Character Bitmap
+            LCD->>LCD: Set Draw Window
+            LCD->>SPI: Write Command (0x20-0x23)
+            SPI->>Screen: Set Window Coordinates
+            
+            LCD->>SPI: Write Command (0x22)
+            SPI->>Screen: Start Data Transfer
+            
+            loop For Each Pixel in Character
+                LCD->>LCD: Get Pixel Color
+                LCD->>SPI: Write Color Data (16-bit)
+                SPI->>Screen: Set Pixel Color
+            end
+        end
+    end
+    
+    Display->>LCD: Draw Status Icons
+    LCD->>LCD: Draw WiFi Icon
+    alt WiFi Connected
+        LCD->>SPI: Draw Green Icon
+    else WiFi Disconnected
+        LCD->>SPI: Draw Red Icon
+    end
+    
+    LCD->>LCD: Draw Mode Indicator
+    alt Periodic Mode
+        LCD->>SPI: Draw Blue Circle (Animated)
+    else Idle Mode
+        LCD->>SPI: No Indicator
+    end
+    
+    Display->>Display: Update Complete Flag
+    Display->>STM32: Return Success
+    
+    Screen->>Screen: Pixels Updated
+    Note over Screen: User Sees:<br/>Temp: 25.48°C<br/>Hum: 60.15%<br/>14:35:45<br/>PERIODIC: ON (5s)<br/>WiFi: OK ✓
+```
+
+---
+
+## 15. Complete Error Cascade & Recovery Sequence
+
+```mermaid
+sequenceDiagram
+    participant STM32 as STM32 Firmware
+    participant ESP32 as ESP32 Gateway
+    participant Broker as MQTT Broker
+    participant Web as Web Dashboard
+    participant User
+    
+    Note over STM32,Web: Multiple Failures Occur
+    
+    par Sensor Failure
+        STM32->>STM32: SHT3X Read Timeout
+        STM32->>STM32: Set sensor_error = true
+        STM32->>STM32: Send Error Data (0.0, 0.0)
+    and WiFi Failure
+        ESP32->>ESP32: WiFi Disconnect Event
+        ESP32->>ESP32: Set wifi_connected = false
+        ESP32->>STM32: UART: "MQTT DISCONNECTED\r\n"
+    and Broker Overload
+        Broker->>Broker: High CPU Usage
+        Broker->>Broker: Slow Response Times
+    end
+    
+    STM32->>STM32: Multiple Errors Detected
+    STM32->>STM32: Enter Error Mode
+    
+    Web->>Web: No Data for 120s
+    Web->>Web: Health Monitor: ALL FAIL
+    Web->>User: Show Critical Alert
+    Note right of User: "System Offline"
+    
+    Note over STM32,ESP32: Recovery Sequence Begins
+    
+    par Sensor Recovery
+        loop Retry 3 Times
+            STM32->>STM32: Wait 10s
+            STM32->>STM32: Reinit SHT3X
+            alt Init Success
+                STM32->>STM32: sensor_error = false
+                STM32->>STM32: Resume Measurements
+            end
+        end
+    and WiFi Recovery
+        ESP32->>ESP32: Reconnect WiFi
+        ESP32->>ESP32: Wait for IP
+        ESP32->>ESP32: WiFi Connected
+        ESP32->>Broker: MQTT Reconnect
+        Broker-->>ESP32: CONNACK
+        ESP32->>STM32: UART: "MQTT CONNECTED\r\n"
+    end
+    
+    STM32->>STM32: All Errors Cleared
+    STM32->>STM32: Resume Normal Operation
+    STM32->>ESP32: Send Valid Data
+    ESP32->>Broker: Publish Data
+    Broker->>Web: Deliver Data
+    
+    Web->>Web: Data Received
+    Web->>Web: Update Health: All OK
+    Web->>User: Show Success
+    Note right of User: "System Recovered"
+    
+    Web->>Web: Generate Recovery Report
+    Note right of Web: Downtime: 2m 15s<br/>Data Lost: 27 records<br/>Buffered: 27 records
+```
+
+---
+
+*End of SEQUENCE_DIAGRAM_SYSTEM.md - Total: 15 comprehensive sequences*
+
