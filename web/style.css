@@ -627,3 +627,67 @@ select option {
 .log-line:hover {
     background-color: rgba(6, 182, 212, 0.1);
 }
+
+/* ====================================================================
+   BUTTON ANIMATIONS
+   ==================================================================== */
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Button disabled state */
+.btn[disabled],
+.btn[style*="pointer-events: none"] {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+}
+
+/* Button disabled state */
+.btn[disabled],
+.btn[style*="pointer-events: none"] {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+}
+
+/* Progress bar shrink animation */
+@keyframes shrink {
+  from { 
+    width: 100%; 
+    opacity: 1;
+  }
+  to { 
+    width: 0%; 
+    opacity: 0.5;
+  }
+}
+
+/* Progress bar glow effect */
+#device-cooldown-progress {
+  animation-timing-function: linear !important;
+}
+
+#device-cooldown-progress::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, 
+    transparent, 
+    rgba(255, 255, 255, 0.3), 
+    transparent
+  );
+  animation: shimmer 1s infinite;
+}
+
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
