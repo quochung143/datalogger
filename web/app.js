@@ -29,6 +29,10 @@ let filteredDataCache = [];
 let liveDataBuffer = [];
 const maxLiveDataEntries = 100;
 
+// Device button cooldown
+let deviceButtonLocked = false;
+let deviceButtonCooldown = 3000; // 3 seconds
+
 // Component health tracking
 const componentHealth = {
   SHT31: {
@@ -181,9 +185,8 @@ function updateConsoleDisplay(logEntry) {
   const time = new Date(logEntry.timestamp).toLocaleTimeString("en-US", {
     hour12: false,
   });
-  const line = `<div class="log-line log-${logEntry.type.toLowerCase()}">[${
-    logEntry.type
-  }] ${time}: ${logEntry.message}</div>`;
+  const line = `<div class="log-line log-${logEntry.type.toLowerCase()}">[${logEntry.type
+    }] ${time}: ${logEntry.message}</div>`;
 
   // Update preview (last 5)
   const preview = document.getElementById("consolePreview");
@@ -501,14 +504,20 @@ function handleMQTTMessage(topic, payload) {
       }
 
       // Update charts only when active and valid values
-      if (isPeriodicTopic && isActiveMeasurement && !sensorFailed) {
-        console.log(
-          `[CHART] Pushing data: temp=${jsonData.temperature}, humi=${
-            jsonData.humidity
-          }, time=${new Date(timestamp).toLocaleTimeString()}`
-        );
-        pushTemperature(jsonData.temperature, true, timestamp);
-        pushHumidity(jsonData.humidity, true, timestamp);
+      if (isPeriodicTopic && isActiveMeasurement) {
+        // Check "Skip error readings" setting
+        const skipErrors = localStorage.getItem("chartSkipErrors") === "true";
+
+        if (skipErrors && sensorFailed) {
+          console.log("[CHART] Skipped error reading (Skip Errors enabled)");
+        } else {
+          console.log(
+            `[CHART] Pushing data: temp=${jsonData.temperature}, humi=${jsonData.humidity
+            }, time=${new Date(timestamp).toLocaleTimeString()}`
+          );
+          pushTemperature(jsonData.temperature, true, timestamp);
+          pushHumidity(jsonData.humidity, true, timestamp);
+        }
         console.log(
           `[CHART] Data pushed. TempData length: ${temperatureData.length}, HumiData length: ${humidityData.length}`
         );
@@ -582,31 +591,12 @@ function syncUIWithHardwareState(state) {
   isDeviceOn = state.device;
   isPeriodic = state.periodic;
 
-  // Update Device button - show CURRENT state
-  const deviceBtn = document.getElementById("deviceBtn");
-  const deviceBtnText = document.getElementById("deviceBtnText");
-  if (isDeviceOn) {
-    deviceBtn.className = "btn btn-success";
-    deviceBtnText.textContent = "Device ON";
-  } else {
-    deviceBtn.className = "btn btn-secondary";
-    deviceBtnText.textContent = "Device OFF";
-  }
-
-  // Update Periodic button - show CURRENT state
-  const periodicBtn = document.getElementById("periodicBtn");
-  const periodicBtnText = document.getElementById("periodicBtnText");
-  if (isPeriodic) {
-    periodicBtn.className = "btn btn-success";
-    periodicBtnText.textContent = "Periodic ON";
-  } else {
-    periodicBtn.className = "btn btn-secondary";
-    periodicBtnText.textContent = "Periodic OFF";
-  }
+  // USE HELPER FUNCTIONS
+  updateDeviceButtonUI();
+  updatePeriodicButtonUI();
 
   addStatus(
-    `State synced: Device=${state.device ? "ON" : "OFF"}, Periodic=${
-      state.periodic ? "ON" : "OFF"
+    `State synced: Device=${state.device ? "ON" : "OFF"}, Periodic=${state.periodic ? "ON" : "OFF"
     }`,
     "SYNC"
   );
@@ -624,8 +614,8 @@ function updateCurrentDisplay() {
   // Prefer the device-provided timestamp if available
   const timeStr = lastReadingTimestamp
     ? new Date(lastReadingTimestamp).toLocaleTimeString("en-US", {
-        hour12: false,
-      })
+      hour12: false,
+    })
     : "--:--:--";
   document.getElementById("lastUpdate").textContent = `Updated at ${timeStr}`;
 }
@@ -653,8 +643,8 @@ function saveToFirebaseSimple(data) {
       data.temp === 0 && data.humi === 0
         ? "sensor_fail"
         : data.time === 0
-        ? "rtc_fail"
-        : null,
+          ? "rtc_fail"
+          : null,
     time: data.time ? data.time - 7 * 3600 : Math.floor(Date.now() / 1000),
     device: data.device ?? "ESP32_01",
     created_at: Date.now(),
@@ -692,8 +682,7 @@ function ensureChartsInitialized() {
 
 function initializeCharts() {
   console.log(
-    `[CHART] Attempting to initialize charts (attempt ${
-      chartInitRetryCount + 1
+    `[CHART] Attempting to initialize charts (attempt ${chartInitRetryCount + 1
     }/${maxChartInitRetries})...`
   );
 
@@ -950,8 +939,7 @@ function pushTemperature(value, update = true, timestamp = null) {
   }
 
   console.log(
-    `[pushTemperature] Value: ${value}, Update: ${update}, TempChart exists: ${!!tempChart}, Array length: ${
-      temperatureData.length
+    `[pushTemperature] Value: ${value}, Update: ${update}, TempChart exists: ${!!tempChart}, Array length: ${temperatureData.length
     }`
   );
 
@@ -986,8 +974,7 @@ function pushHumidity(value, update = true, timestamp = null) {
   }
 
   console.log(
-    `[pushHumidity] Value: ${value}, Update: ${update}, HumiChart exists: ${!!humiChart}, Array length: ${
-      humidityData.length
+    `[pushHumidity] Value: ${value}, Update: ${update}, HumiChart exists: ${!!humiChart}, Array length: ${humidityData.length
     }`
   );
 
@@ -1049,12 +1036,63 @@ function clearChartData() {
 }
 
 // ====================================================================
+// APPLY CHART SETTINGS DYNAMICALLY
+// ====================================================================
+function applyChartSettings() {
+  console.log("[CHART] Applying new settings:", {
+    maxDataPoints,
+    tempDataLength: temperatureData.length,
+    humiDataLength: humidityData.length,
+  });
+
+  // Trim temperature data if exceeds new limit
+  if (temperatureData.length > maxDataPoints) {
+    const removeCount = temperatureData.length - maxDataPoints;
+    temperatureData.splice(0, removeCount);
+    console.log(`[CHART] Removed ${removeCount} temperature points`);
+  }
+
+  // Trim humidity data if exceeds new limit
+  if (humidityData.length > maxDataPoints) {
+    const removeCount = humidityData.length - maxDataPoints;
+    humidityData.splice(0, removeCount);
+    console.log(`[CHART] Removed ${removeCount} humidity points`);
+  }
+
+  // Update temperature chart
+  if (tempChart) {
+    tempChart.data.labels = temperatureData.map((d) => d.time);
+    tempChart.data.datasets[0].data = temperatureData.map((d) => d.value);
+    tempChart.update("none"); // 'none' = no animation for instant update
+    updateChartStats("temp");
+    console.log("[CHART] Temperature chart updated");
+  }
+
+  // Update humidity chart
+  if (humiChart) {
+    humiChart.data.labels = humidityData.map((d) => d.time);
+    humiChart.data.datasets[0].data = humidityData.map((d) => d.value);
+    humiChart.update("none");
+    updateChartStats("humi");
+    console.log("[CHART] Humidity chart updated");
+  }
+
+  addStatus(`Charts refreshed with ${maxDataPoints} max points`, "INFO");
+}
+
+// ====================================================================
 // BUTTON HANDLERS
 // ====================================================================
 // ====================================================================
 // BUTTON EVENT LISTENERS
 // ====================================================================
 document.getElementById("deviceBtn").addEventListener("click", function () {
+  // CHECK IF BUTTON IS LOCKED
+  if (deviceButtonLocked) {
+    addStatus("Please wait... Device button is cooling down", "WARNING");
+    return;
+  }
+
   if (!isMqttConnected) {
     addStatus("MQTT not connected", "ERROR");
     return;
@@ -1064,6 +1102,9 @@ document.getElementById("deviceBtn").addEventListener("click", function () {
   const command = isDeviceOn ? "RELAY OFF" : "RELAY ON";
   const willBeDeviceOn = !isDeviceOn;
 
+  // LOCK BUTTON IMMEDIATELY
+  lockDeviceButton();
+
   // Publish MQTT command
   mqttClient.publish(MQTT_CONFIG.topics.relayControl, command, { qos: 1 });
 
@@ -1071,23 +1112,12 @@ document.getElementById("deviceBtn").addEventListener("click", function () {
   isDeviceOn = willBeDeviceOn;
 
   // Update UI - show CURRENT state
-  const deviceBtn = document.getElementById("deviceBtn");
-  const deviceBtnText = document.getElementById("deviceBtnText");
-  if (isDeviceOn) {
-    deviceBtn.className = "btn btn-success";
-    deviceBtnText.textContent = "Device ON";
-  } else {
-    deviceBtn.className = "btn btn-secondary";
-    deviceBtnText.textContent = "Device OFF";
-  }
+  updateDeviceButtonUI();
 
   // If turning OFF, stop periodic mode immediately
   if (!isDeviceOn && isPeriodic) {
     isPeriodic = false;
-    const periodicBtn = document.getElementById("periodicBtn");
-    const periodicBtnText = document.getElementById("periodicBtnText");
-    if (periodicBtn) periodicBtn.className = "btn btn-secondary";
-    if (periodicBtnText) periodicBtnText.textContent = "Periodic OFF";
+    updatePeriodicButtonUI();
 
     mqttClient.publish(MQTT_CONFIG.topics.stm32Command, "PERIODIC OFF", {
       qos: 1,
@@ -1105,7 +1135,147 @@ document.getElementById("deviceBtn").addEventListener("click", function () {
   }
 
   addStatus(`Device ${command} sent`, "MQTT");
+
+  // UNLOCK AFTER COOLDOWN
+  setTimeout(() => {
+    unlockDeviceButton();
+  }, deviceButtonCooldown);
 });
+
+// ====================================================================
+// DEVICE BUTTON LOCK/UNLOCK HELPERS
+// ====================================================================
+
+/**
+ * Lock Device button and show visual feedback
+ */
+function lockDeviceButton() {
+  deviceButtonLocked = true;
+
+  const deviceBtn = document.getElementById("deviceBtn");
+  const deviceBtnText = document.getElementById("deviceBtnText");
+
+  if (deviceBtn) {
+    // Add disabled visual state
+    deviceBtn.style.opacity = "0.5";
+    deviceBtn.style.cursor = "not-allowed";
+    deviceBtn.style.pointerEvents = "none"; // Prevent clicks
+
+    deviceBtn.style.position = "relative";
+    deviceBtn.style.overflow = "hidden";
+
+    // Add spinning icon
+    const icon = deviceBtn.querySelector('i[data-feather]');
+    if (icon) {
+      icon.style.animation = "spin 1s linear infinite";
+    }
+
+    const progressBar = document.createElement('div');
+    progressBar.id = 'device-cooldown-progress';
+    progressBar.style.cssText = `
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      height: 4px;
+      width: 100%;
+      background: linear-gradient(90deg, #10B981 0%, #06B6D4 100%);
+      animation: shrink ${deviceButtonCooldown}ms linear;
+      box-shadow: 0 0 10px rgba(6, 182, 212, 0.5);
+      z-index: 10;
+    `;
+
+    // Thêm progress bar vào button
+    deviceBtn.appendChild(progressBar);
+  }
+
+  // Start countdown display
+  let countdown = Math.ceil(deviceButtonCooldown / 1000);
+  const originalText = deviceBtnText.textContent;
+
+  const countdownInterval = setInterval(() => {
+    if (countdown > 0 && deviceButtonLocked) {
+      deviceBtnText.textContent = `Wait ${countdown}s...`;
+      countdown--;
+    } else {
+      clearInterval(countdownInterval);
+      if (!deviceButtonLocked) {
+        deviceBtnText.textContent = originalText;
+      }
+    }
+  }, 1000);
+
+  addStatus(`Device button locked for ${deviceButtonCooldown / 1000}s`, "INFO");
+}
+
+/**
+ * Unlock Device button and restore normal state
+ */
+function unlockDeviceButton() {
+  deviceButtonLocked = false;
+
+  const deviceBtn = document.getElementById("deviceBtn");
+  const icon = deviceBtn?.querySelector('i[data-feather]');
+
+  if (deviceBtn) {
+    deviceBtn.style.opacity = "1";
+    deviceBtn.style.cursor = "pointer";
+    deviceBtn.style.pointerEvents = "auto";
+
+    // Remove spinning animation
+    if (icon) {
+      icon.style.animation = "";
+    }
+
+    const progressBar = document.getElementById('device-cooldown-progress');
+    if (progressBar) {
+      progressBar.remove();
+    }
+
+    deviceBtn.style.position = "";
+    deviceBtn.style.overflow = "";
+  }
+
+  // Restore correct button text
+  updateDeviceButtonUI();
+
+  addStatus("Device button unlocked", "INFO");
+}
+
+/**
+ * Update Device button UI based on current state
+ */
+function updateDeviceButtonUI() {
+  const deviceBtn = document.getElementById("deviceBtn");
+  const deviceBtnText = document.getElementById("deviceBtnText");
+
+  if (!deviceBtn || !deviceBtnText) return;
+
+  if (isDeviceOn) {
+    deviceBtn.className = "btn btn-success";
+    deviceBtnText.textContent = "Device ON";
+  } else {
+    deviceBtn.className = "btn btn-secondary";
+    deviceBtnText.textContent = "Device OFF";
+  }
+}
+
+/**
+ * Update Periodic button UI based on current state
+ */
+function updatePeriodicButtonUI() {
+  const periodicBtn = document.getElementById("periodicBtn");
+  const periodicBtnText = document.getElementById("periodicBtnText");
+
+  if (!periodicBtn || !periodicBtnText) return;
+
+  if (isPeriodic) {
+    periodicBtn.className = "btn btn-success";
+    periodicBtnText.textContent = "Periodic ON";
+  } else {
+    periodicBtn.className = "btn btn-secondary";
+    periodicBtnText.textContent = "Periodic OFF";
+  }
+}
 
 document.getElementById("periodicBtn").addEventListener("click", function () {
   if (!isMqttConnected) {
@@ -1227,10 +1397,17 @@ function loadHistoryFromFirebase() {
       }
 
       // Sort by timestamp (newest first)
-      allData.sort((a, b) => b.timestamp - a.timestamp);
+      allData.sort((a, b) => {
+        const timeA = a.time || a.created_at / 1000;
+        const timeB = b.time || b.created_at / 1000;
+        return timeB - timeA;
+      });
 
-      // Take last 50 points for charts
-      const recentData = allData.slice(0, 50).reverse();
+      // USE CURRENT maxDataPoints SETTING (not hardcoded 50)
+      const pointsToLoad = Math.min(allData.length, maxDataPoints);
+      const recentData = allData.slice(0, pointsToLoad).reverse();
+
+      addStatus(`Loading ${pointsToLoad} most recent points (out of ${totalRecords} total)`, "INFO");
 
       // Clear existing chart data
       temperatureData = [];
@@ -1239,8 +1416,18 @@ function loadHistoryFromFirebase() {
       // Populate charts
       recentData.forEach((record) => {
         if (record.temp !== undefined && record.humi !== undefined) {
-          pushTemperature(record.temp, false, record.timestamp * 1000);
-          pushHumidity(record.humi, false, record.timestamp * 1000);
+          // Skip errors if setting enabled
+          const skipErrors = localStorage.getItem('chartSkipErrors') === 'true';
+          const isError = record.temp === 0 && record.humi === 0;
+
+          if (skipErrors && isError) {
+            console.log('[HISTORY] Skipped error record:', record);
+            return; // Skip this record
+          }
+
+          const timestamp = record.time ? record.time * 1000 : record.created_at;
+          pushTemperature(record.temp, false, timestamp);
+          pushHumidity(record.humi, false, timestamp);
         }
       });
 
@@ -1260,7 +1447,7 @@ function loadHistoryFromFirebase() {
       }
 
       addStatus(
-        `Loaded ${totalRecords} records (last 24h), showing ${recentData.length} on charts`,
+        `Loaded ${totalRecords} records (last 24h), showing ${pointsToLoad} on charts (max: ${maxDataPoints})`,
         "INFO"
       );
     })
@@ -1320,14 +1507,13 @@ function renderLiveDataTable() {
                         <td style="padding: 0.75rem;">${idx + 1}</td>
                         <td style="padding: 0.75rem;">${time}</td>
                         <td style="padding: 0.75rem;">${data.temp.toFixed(
-                          1
-                        )}</td>
+        1
+      )}</td>
                         <td style="padding: 0.75rem;">${data.humi.toFixed(
-                          1
-                        )}</td>
-                        <td style="padding: 0.75rem; text-transform: capitalize;">${
-                          data.mode
-                        }</td>
+        1
+      )}</td>
+                        <td style="padding: 0.75rem; text-transform: capitalize;">${data.mode
+        }</td>
                         <td style="padding: 0.75rem;">
                             <span class="status-badge ${statusClass}" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;">
                                 ${statusText}
@@ -1954,15 +2140,12 @@ function renderDataManagementTable(data) {
                     <tr style="border-bottom: 1px solid var(--border-color);">
                         <td style="padding: 0.75rem;">${idx + 1}</td>
                         <td style="padding: 0.75rem;">${dateStr} ${timeStr}</td>
-                        <td style="padding: 0.75rem;">${
-                          record.temp?.toFixed(1) || "--"
-                        }</td>
-                        <td style="padding: 0.75rem;">${
-                          record.humi?.toFixed(1) || "--"
-                        }</td>
-                        <td style="padding: 0.75rem; text-transform: capitalize;">${
-                          record.mode || "--"
-                        }</td>
+                        <td style="padding: 0.75rem;">${record.temp?.toFixed(1) || "--"
+        }</td>
+                        <td style="padding: 0.75rem;">${record.humi?.toFixed(1) || "--"
+        }</td>
+                        <td style="padding: 0.75rem; text-transform: capitalize;">${record.mode || "--"
+        }</td>
                         <td style="padding: 0.75rem;">
                             <span class="status-badge ${statusClass}" style="font-size: 0.75rem; padding: 0.25rem 0.5rem;">
                                 ${statusText}
@@ -2294,9 +2477,8 @@ function renderFullConsole() {
       const color = colors[log.type] || "#10B981";
 
       return `<div class="log-line log-${log.type.toLowerCase()}" style="color: ${color};">
-                    <strong>[${time}]</strong> <strong style="display: inline-block; min-width: 80px;">[${
-        log.type
-      }]</strong> ${log.message}
+                    <strong>[${time}]</strong> <strong style="display: inline-block; min-width: 80px;">[${log.type
+        }]</strong> ${log.message}
                 </div>`;
     })
     .join("");
@@ -2483,11 +2665,17 @@ function loadSettingsPage() {
 
   // Load chart settings
   document.getElementById("chartMaxPoints").value =
-    localStorage.getItem("chartMaxPoints") || "50";
+    localStorage.getItem("chartMaxPoints") || maxDataPoints.toString();
   document.getElementById("chartUpdateInterval").value =
     localStorage.getItem("chartUpdateInterval") || "1";
   document.getElementById("chartSkipErrors").checked =
     localStorage.getItem("chartSkipErrors") === "true";
+
+  console.log("[SETTINGS] Loaded chart settings:", {
+    maxPoints: document.getElementById("chartMaxPoints").value,
+    updateInterval: document.getElementById("chartUpdateInterval").value,
+    skipErrors: document.getElementById("chartSkipErrors").checked,
+  });
 
   // Load data settings
   document.getElementById("dataDefaultInterval").value =
@@ -2501,7 +2689,7 @@ function loadSettingsPage() {
 function saveSettings() {
   addStatus("Saving settings...", "INFO");
 
-  // Validate inputs
+  // === VALIDATE MQTT ===
   const host = document.getElementById("mqttHost").value.trim();
   const port = parseInt(document.getElementById("mqttPort").value);
   const clientId = document.getElementById("mqttClientId").value.trim();
@@ -2511,57 +2699,114 @@ function saveSettings() {
   const password =
     document.getElementById("mqttPass").value.trim() || "datalogger";
 
-  // Validate MQTT settings
   if (!host) {
-    alert(" Error: MQTT Host cannot be empty!");
+    alert("Error: MQTT Host cannot be empty!");
     addStatus("Settings validation failed: Empty MQTT host", "ERROR");
     return;
   }
   if (!port || port < 1 || port > 65535) {
-    alert(" Error: MQTT Port must be between 1-65535!");
+    alert("Error: MQTT Port must be between 1-65535!");
     addStatus("Settings validation failed: Invalid MQTT port", "ERROR");
     return;
   }
   if (!clientId) {
-    alert(" Error: Client ID cannot be empty!");
+    alert("Error: Client ID cannot be empty!");
     addStatus("Settings validation failed: Empty client ID", "ERROR");
     return;
   }
 
-  // Validate Firebase settings
+  // === VALIDATE CHART SETTINGS ===
+  const maxPoints = parseInt(document.getElementById("chartMaxPoints").value);
+  const updateInterval = parseInt(
+    document.getElementById("chartUpdateInterval").value
+  );
+
+  if (maxPoints < 10 || maxPoints > 200) {
+    alert("Error: Max Data Points must be between 10-200!");
+    addStatus("Settings validation failed: Invalid max points", "ERROR");
+    return;
+  }
+  if (updateInterval < 1 || updateInterval > 60) {
+    alert("Error: Update Interval must be between 1-60 seconds!");
+    addStatus("Settings validation failed: Invalid update interval", "ERROR");
+    return;
+  }
+
+  // === VALIDATE FIREBASE ===
   const apiKey = document.getElementById("firebaseApiKey").value.trim();
   const projectId = document.getElementById("firebaseProjectId").value.trim();
   const databaseURL = document.getElementById("firebaseDbUrl").value.trim();
 
   if (!apiKey || !projectId || !databaseURL) {
-    alert(
-      " Warning: Firebase settings are incomplete. Firebase features will be disabled."
+    addStatus(
+      "Warning: Firebase settings incomplete - Firebase will be disabled",
+      "WARNING"
     );
-    addStatus("Settings saved with incomplete Firebase config", "WARNING");
   }
 
-  // Update MQTT config object
-  MQTT_CONFIG.host = host;
-  MQTT_CONFIG.port = port;
-  MQTT_CONFIG.path = path;
-  MQTT_CONFIG.username = username;
-  MQTT_CONFIG.password = password;
-  MQTT_CONFIG.clientId = clientId;
-  MQTT_CONFIG.url = `ws://${host}:${port}${path}`;
+  // === CHECK IF MQTT CONFIG CHANGED ===
+  const mqttChanged =
+    MQTT_CONFIG.host !== host ||
+    MQTT_CONFIG.port !== port ||
+    MQTT_CONFIG.clientId !== clientId ||
+    MQTT_CONFIG.path !== path ||
+    MQTT_CONFIG.username !== username ||
+    MQTT_CONFIG.password !== password;
 
-  // Update Firebase config object
-  FIREBASE_CONFIG.apiKey = apiKey;
-  FIREBASE_CONFIG.projectId = projectId;
-  FIREBASE_CONFIG.databaseURL = databaseURL;
+  if (mqttChanged) {
+    MQTT_CONFIG.host = host;
+    MQTT_CONFIG.port = port;
+    MQTT_CONFIG.path = path;
+    MQTT_CONFIG.username = username;
+    MQTT_CONFIG.password = password;
+    MQTT_CONFIG.clientId = clientId;
+    MQTT_CONFIG.url = `ws://${host}:${port}${path}`;
 
-  // Save config objects to localStorage
-  localStorage.setItem("datalogger_mqtt_config", JSON.stringify(MQTT_CONFIG));
+    localStorage.setItem("datalogger_mqtt_config", JSON.stringify(MQTT_CONFIG));
+    addStatus("MQTT config saved", "INFO");
+  }
+
+  // === CHECK IF FIREBASE CONFIG CHANGED ===
+  const firebaseChanged =
+    FIREBASE_CONFIG.apiKey !== apiKey ||
+    FIREBASE_CONFIG.projectId !== projectId ||
+    FIREBASE_CONFIG.databaseURL !== databaseURL;
+
+  if (firebaseChanged) {
+    FIREBASE_CONFIG.apiKey = apiKey;
+    FIREBASE_CONFIG.projectId = projectId;
+    FIREBASE_CONFIG.databaseURL = databaseURL;
+
+    localStorage.setItem(
+      "datalogger_firebase_config",
+      JSON.stringify(FIREBASE_CONFIG)
+    );
+    addStatus("Firebase config saved", "INFO");
+  }
+
+  // === SAVE CHART SETTINGS (NO RECONNECT NEEDED) ===
+  const oldMaxPoints = maxDataPoints;
+  maxDataPoints = maxPoints;
+
+  localStorage.setItem("chartMaxPoints", maxPoints);
+  localStorage.setItem("chartUpdateInterval", updateInterval);
   localStorage.setItem(
-    "datalogger_firebase_config",
-    JSON.stringify(FIREBASE_CONFIG)
+    "chartSkipErrors",
+    document.getElementById("chartSkipErrors").checked
   );
 
-  // Save display preferences
+  addStatus(
+    `Chart settings: ${maxPoints} points, ${updateInterval}s interval`,
+    "INFO"
+  );
+
+  // Apply chart settings immediately
+  if (oldMaxPoints !== maxPoints) {
+    applyChartSettings();
+    addStatus(`Chart data trimmed to ${maxPoints} points`, "INFO");
+  }
+
+  // === SAVE DISPLAY PREFERENCES ===
   localStorage.setItem("tempUnit", document.getElementById("tempUnit").value);
   localStorage.setItem(
     "timeFormat",
@@ -2572,21 +2817,7 @@ function saveSettings() {
     document.getElementById("dateFormat").value
   );
 
-  // Save chart settings
-  localStorage.setItem(
-    "chartMaxPoints",
-    document.getElementById("chartMaxPoints").value
-  );
-  localStorage.setItem(
-    "chartUpdateInterval",
-    document.getElementById("chartUpdateInterval").value
-  );
-  localStorage.setItem(
-    "chartSkipErrors",
-    document.getElementById("chartSkipErrors").checked
-  );
-
-  // Save data settings
+  // === SAVE DATA SETTINGS ===
   localStorage.setItem(
     "dataDefaultInterval",
     document.getElementById("dataDefaultInterval").value
@@ -2600,35 +2831,92 @@ function saveSettings() {
     document.getElementById("dataAutoSave").checked
   );
 
-  addStatus(" Settings saved to localStorage", "SUCCESS");
+  addStatus("All settings saved to localStorage", "SUCCESS");
 
-  // Reconnect MQTT with diagnostic
-  addStatus(" Reconnecting MQTT broker...", "INFO");
-  if (mqttClient && mqttClient.connected) {
-    addStatus("Disconnecting existing MQTT connection...", "INFO");
-    mqttClient.end(true);
+  // === RECONNECT ONLY IF CONFIGS CHANGED ===
+  let needsReconnect = false;
+
+  if (mqttChanged) {
+    addStatus("MQTT config changed - Reconnecting...", "MQTT");
+    if (mqttClient && mqttClient.connected) {
+      mqttClient.end(true);
+    }
+    setTimeout(() => initializeMQTT(), 500);
+    needsReconnect = true;
   }
 
-  // Small delay to ensure clean disconnect
-  setTimeout(() => {
-    addStatus(
-      `Connecting to ws://${host}:${port}${path} as ${clientId}...`,
-      "INFO"
+  if (firebaseChanged && apiKey && projectId && databaseURL) {
+    addStatus("Firebase config changed - Reconnecting...", "FIREBASE");
+    setTimeout(() => reconnectFirebase(), 1000);
+    needsReconnect = true;
+  }
+
+  // === SHOW RESULT ===
+  if (needsReconnect) {
+    alert(
+      "Settings saved!\n\nReconnecting changed services...\n\nCheck System Console for connection status."
     );
-    initializeMQTT();
-  }, 500);
-
-  // Reconnect Firebase with diagnostic
-  if (apiKey && projectId && databaseURL) {
-    addStatus(" Reconnecting Firebase...", "INFO");
-    setTimeout(() => {
-      initializeFirebase();
-    }, 1000);
+  } else {
+    alert(
+      "Settings saved successfully!\n\nNo reconnection needed (configs unchanged)."
+    );
   }
+}
 
-  alert(
-    " Settings saved!\n\n Reconnecting to MQTT and Firebase...\nCheck the System Console for connection status."
-  );
+// ====================================================================
+// FIREBASE RECONNECTION (NEW)
+// ====================================================================
+async function reconnectFirebase() {
+  try {
+    // Step 1: Disconnect existing app
+    if (firebase.apps.length > 0) {
+      addStatus("Disconnecting existing Firebase app...", "FIREBASE");
+      await firebase.app().delete();
+      addStatus("Firebase app removed", "FIREBASE");
+    }
+
+    // Step 2: Wait for cleanup
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    // Step 3: Initialize new connection
+    addStatus("Initializing new Firebase connection...", "FIREBASE");
+    firebase.initializeApp(FIREBASE_CONFIG);
+    firebaseDb = firebase.database();
+
+    // Step 4: Setup connection listener
+    firebaseDb.ref(".info/connected").on("value", function (snapshot) {
+      if (snapshot.val() === true) {
+        addStatus("Firebase reconnected successfully!", "FIREBASE");
+
+        // Test write permission
+        firebaseDb
+          .ref("test/connection")
+          .set({
+            timestamp: Date.now(),
+            message: "Reconnection test",
+          })
+          .then(() => {
+            updateFirebaseStatus(true);
+            addStatus("Firebase write permissions verified", "FIREBASE");
+            firebaseDb.ref("test").remove();
+          })
+          .catch((error) => {
+            updateFirebaseStatus(false);
+            addStatus(
+              `Firebase permission error: ${error.message}`,
+              "ERROR"
+            );
+          });
+      } else {
+        updateFirebaseStatus(false);
+        addStatus("Firebase connection lost", "WARNING");
+      }
+    });
+  } catch (error) {
+    addStatus(`Firebase reconnection failed: ${error.message}`, "ERROR");
+    console.error("[FIREBASE] Reconnect error:", error);
+    updateFirebaseStatus(false);
+  }
 }
 
 function exportSettings() {
@@ -2999,6 +3287,26 @@ function runInitialization() {
   // Load saved config from localStorage
   const savedMQTT = localStorage.getItem("datalogger_mqtt_config");
   const savedFirebase = localStorage.getItem("datalogger_firebase_config");
+
+  // === LOAD CHART SETTINGS FROM LOCALSTORAGE ===
+  const savedMaxPoints = localStorage.getItem("chartMaxPoints");
+  const savedUpdateInterval = localStorage.getItem("chartUpdateInterval");
+  const savedSkipErrors = localStorage.getItem("chartSkipErrors");
+
+  if (savedMaxPoints) {
+    maxDataPoints = parseInt(savedMaxPoints);
+    addStatus(`Loaded chart settings: ${maxDataPoints} max points`, "INFO");
+  }
+  if (savedUpdateInterval) {
+    const interval = parseInt(savedUpdateInterval);
+    addStatus(`Chart update interval: ${interval}s`, "INFO");
+  }
+  if (savedSkipErrors !== null) {
+    addStatus(
+      `Skip errors: ${savedSkipErrors === "true" ? "ON" : "OFF"}`,
+      "INFO"
+    );
+  }
 
   if (savedMQTT) {
     const config = JSON.parse(savedMQTT);
