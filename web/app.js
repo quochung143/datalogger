@@ -3,6 +3,7 @@
 // TODO: change Temperature (C) To Temperature(°C) or (°F) or (K) follow to Display Preferences setting
 // TODO: Fix chart y-axis label to reflect temperature unit preference
 // TODO: Temp Min (C) and Temp Max (C) in Data Management should reflect user preference follow Display Preferences setting
+// TODO: Fix chart temperature follow Temperature Unit
 
 // Initialize Feather Icons
 feather.replace();
@@ -790,7 +791,8 @@ function updateCurrentDisplay() {
   const timeStr = lastReadingTimestamp
     ? formatTime(new Date(lastReadingTimestamp))
     : "--:--:--";
-  document.getElementById("lastUpdate").textContent = `Updated at ${timeStr}`;
+  // TODO: Change format to --:--:-- (--:--:-- AM/PM) DD/MM/YYYY
+  document.getElementById("lastUpdate").textContent = `${timeStr}`;
 }
 
 // ====================================================================
@@ -957,6 +959,7 @@ function initializeCharts() {
             cornerRadius: 8,
             displayColors: false,
             callbacks: {
+              // TODO: change unit based on user preference °C, °F, or K
               label: function (context) {
                 return `Temperature: ${context.parsed.y.toFixed(1)}C`;
               },
@@ -1306,7 +1309,8 @@ document.getElementById("deviceBtn").addEventListener("click", function () {
     currentHumi = null;
     document.getElementById("currentTemp").textContent = "--";
     document.getElementById("currentHumi").textContent = "--";
-    document.getElementById("lastUpdate").textContent = "Updated at --:--:--";
+    // TODO: Change format to --:--:-- (--:--:-- AM/PM) DD/MM/YYYY
+    document.getElementById("lastUpdate").textContent = "--:--:--";
   }
 
   addStatus(`Device ${command} sent`, "MQTT");
