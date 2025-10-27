@@ -82,6 +82,15 @@ let stateSync = {
   ignoreNextPeriodicSync: false,
 };
 
+// ====================================================================
+// DISPLAY PREFERENCES STATE
+// ====================================================================
+let displayPreferences = {
+  tempUnit: "celsius", // celsius, fahrenheit, kelvin
+  timeFormat: "24h",   // 24h or 12h
+  dateFormat: "DD/MM/YYYY", // DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD
+};
+
 // Firebase Configuration
 let FIREBASE_CONFIG = {
   apiKey: "AIzaSyAxEhTb1cNHTwmVWh4vbpA5MZSF0Vf0l0U",
@@ -111,6 +120,159 @@ const MQTT_CONFIG = {
 let tempChart, humiChart;
 let chartInitRetryCount = 0;
 const maxChartInitRetries = 10;
+
+// ====================================================================
+// DISPLAY PREFERENCES - FORMATTING FUNCTIONS
+// ====================================================================
+
+/**
+ * Format temperature based on user preference
+ * @param {number} celsius - Temperature in Celsius
+ * @returns {string} Formatted temperature with unit
+ */
+function formatTemperature(celsius) {
+  if (celsius === null || celsius === undefined || isNaN(celsius)) {
+    return "N/A";
+  }
+
+  const unit = displayPreferences.tempUnit || "celsius";
+  let value;
+  let symbol;
+
+  switch (unit) {
+    case "fahrenheit":
+      value = (celsius * 9/5) + 32;
+      symbol = "°F";
+      break;
+    case "kelvin":
+      value = celsius + 273.15;
+      symbol = "K";
+      break;
+    case "celsius":
+    default:
+      value = celsius;
+      symbol = "°C";
+  }
+
+  return `${value.toFixed(2)}${symbol}`;
+}
+
+/**
+ * Format time based on user preference
+ * @param {Date|number} date - Date object or timestamp in ms
+ * @returns {string} Formatted time
+ */
+function formatTime(date) {
+  if (!date) return "--:--:--";
+  
+  const d = date instanceof Date ? date : new Date(date);
+  if (isNaN(d.getTime())) return "--:--:--";
+
+  const format = displayPreferences.timeFormat || "24h";
+  
+  if (format === "12h") {
+    return d.toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: true,
+    });
+  } else {
+    // 24h format
+    return d.toLocaleTimeString("en-GB", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+  }
+}
+
+/**
+ * Format date based on user preference
+ * @param {Date|number} date - Date object or timestamp in ms
+ * @returns {string} Formatted date
+ */
+function formatDate(date) {
+  if (!date) return "--/--/--";
+  
+  const d = date instanceof Date ? date : new Date(date);
+  if (isNaN(d.getTime())) return "--/--/--";
+
+  const format = displayPreferences.dateFormat || "DD/MM/YYYY";
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const year = d.getFullYear();
+
+  switch (format) {
+    case "MM/DD/YYYY":
+      return `${month}/${day}/${year}`;
+    case "YYYY-MM-DD":
+      return `${year}-${month}-${day}`;
+    case "DD/MM/YYYY":
+    default:
+      return `${day}/${month}/${year}`;
+  }
+}
+
+/**
+ * Format full datetime (date + time)
+ * @param {Date|number} date - Date object or timestamp in ms
+ * @returns {string} Formatted datetime
+ */
+function formatDateTime(date) {
+  return `${formatDate(date)} ${formatTime(date)}`;
+}
+
+/**
+ * Load and apply display preferences from localStorage
+ */
+function applyDisplayPreferences() {
+  // Load from localStorage
+  displayPreferences.tempUnit = localStorage.getItem("tempUnit") || "celsius";
+  displayPreferences.timeFormat = localStorage.getItem("timeFormat") || "24h";
+  displayPreferences.dateFormat = localStorage.getItem("dateFormat") || "DD/MM/YYYY";
+
+  addStatus(
+    `Display preferences loaded: ${displayPreferences.tempUnit} | ${displayPreferences.timeFormat} | ${displayPreferences.dateFormat}`,
+    "INFO"
+  );
+
+  // Apply to all current displays
+  refreshAllDisplays();
+}
+
+/**
+ * Refresh all displays with current display preferences
+ */
+function refreshAllDisplays() {
+  // Update current reading display
+  updateCurrentDisplay();
+
+  // Update live data table
+  if (liveDataBuffer.length > 0) {
+    renderLiveDataTable();
+  }
+
+  // Update data management table
+  const dataSection = document.getElementById("page-data");
+  if (dataSection && dataSection.classList.contains("active")) {
+    renderDataManagementTable(filteredDataCache);
+  }
+
+  // Update chart labels (if charts exist)
+  if (tempChart && tempChart.data) {
+    const yLabel = `Temperature (${displayPreferences.tempUnit === "fahrenheit" ? "°F" : displayPreferences.tempUnit === "kelvin" ? "K" : "°C"})`;
+    tempChart.options.scales.y.title.text = yLabel;
+    tempChart.update();
+  }
+  if (humiChart && humiChart.data) {
+    humiChart.options.scales.y.title.text = "Humidity (%)";
+    humiChart.update();
+  }
+
+  addStatus("All displays refreshed with new preferences", "INFO");
+}
 
 // ====================================================================
 // NAVIGATION
@@ -606,16 +768,17 @@ function syncUIWithHardwareState(state) {
 // CURRENT DISPLAY
 // ====================================================================
 function updateCurrentDisplay() {
-  document.getElementById("currentTemp").textContent =
-    currentTemp !== null ? currentTemp.toFixed(1) : "--";
+  // Use formatting function for temperature
+  const tempDisplay = currentTemp !== null ? formatTemperature(currentTemp) : "N/A";
+  document.getElementById("currentTemp").textContent = tempDisplay;
+  
+  // Humidity stays as percentage
   document.getElementById("currentHumi").textContent =
-    currentHumi !== null ? currentHumi.toFixed(1) : "--";
+    currentHumi !== null ? currentHumi.toFixed(1) + "%" : "N/A";
 
-  // Prefer the device-provided timestamp if available
+  // Use formatting function for time
   const timeStr = lastReadingTimestamp
-    ? new Date(lastReadingTimestamp).toLocaleTimeString("en-US", {
-      hour12: false,
-    })
+    ? formatTime(new Date(lastReadingTimestamp))
     : "--:--:--";
   document.getElementById("lastUpdate").textContent = `Updated at ${timeStr}`;
 }
@@ -1495,9 +1658,8 @@ function renderLiveDataTable() {
 
   tbody.innerHTML = filtered
     .map((data, idx) => {
-      const time = new Date(data.time).toLocaleTimeString("en-US", {
-        hour12: false,
-      });
+      const time = formatTime(new Date(data.time));
+      const tempDisplay = formatTemperature(data.temp);
       const statusClass =
         data.status === "success" ? "connected" : "disconnected";
       const statusText = data.status === "success" ? " Success" : " Error";
@@ -1506,12 +1668,10 @@ function renderLiveDataTable() {
                     <tr style="border-bottom: 1px solid var(--border-color);">
                         <td style="padding: 0.75rem;">${idx + 1}</td>
                         <td style="padding: 0.75rem;">${time}</td>
-                        <td style="padding: 0.75rem;">${data.temp.toFixed(
-        1
-      )}</td>
+                        <td style="padding: 0.75rem;">${tempDisplay}</td>
                         <td style="padding: 0.75rem;">${data.humi.toFixed(
         1
-      )}</td>
+      )}%</td>
                         <td style="padding: 0.75rem; text-transform: capitalize;">${data.mode
         }</td>
                         <td style="padding: 0.75rem;">
@@ -1565,14 +1725,13 @@ function bindLiveDataButtons() {
       }
 
       const csv = [
-        ["#", "Time", "Temperature (C)", "Humidity (%)", "Mode", "Status"].join(
+        ["#", "DateTime", "Temperature", "Humidity (%)", "Mode", "Status"].join(
           ","
         ),
         ...liveDataBuffer.map((d, idx) => {
-          const time = new Date(d.time).toLocaleTimeString("en-US", {
-            hour12: false,
-          });
-          return [idx + 1, time, d.temp, d.humi, d.mode, d.status].join(",");
+          const dateTime = formatDateTime(new Date(d.time));
+          const tempDisplay = formatTemperature(d.temp);
+          return [idx + 1, dateTime, tempDisplay, d.humi.toFixed(2), d.mode, d.status].join(",");
         }),
       ].join("\n");
 
@@ -2130,8 +2289,9 @@ function renderDataManagementTable(data) {
       // Use device timestamp (time field) instead of created_at
       const timestamp = record.time ? record.time * 1000 : record.created_at;
       const date = new Date(timestamp);
-      const dateStr = date.toLocaleDateString();
-      const timeStr = date.toLocaleTimeString("en-US", { hour12: false });
+      const dateStr = formatDate(date);
+      const timeStr = formatTime(date);
+      const tempDisplay = formatTemperature(record.temp);
       const statusClass =
         record.status === "success" ? "connected" : "disconnected";
       const statusText = record.status === "success" ? " Success" : " Error";
@@ -2140,10 +2300,9 @@ function renderDataManagementTable(data) {
                     <tr style="border-bottom: 1px solid var(--border-color);">
                         <td style="padding: 0.75rem;">${idx + 1}</td>
                         <td style="padding: 0.75rem;">${dateStr} ${timeStr}</td>
-                        <td style="padding: 0.75rem;">${record.temp?.toFixed(1) || "--"
-        }</td>
+                        <td style="padding: 0.75rem;">${tempDisplay}</td>
                         <td style="padding: 0.75rem;">${record.humi?.toFixed(1) || "--"
-        }</td>
+        }%</td>
                         <td style="padding: 0.75rem; text-transform: capitalize;">${record.mode || "--"
         }</td>
                         <td style="padding: 0.75rem;">
@@ -2191,8 +2350,24 @@ function updateDataStatistics(data) {
 
   document.getElementById("statsTotal").textContent = data.length;
   document.getElementById("statsSuccess").textContent = successRate + "%";
-  document.getElementById("statsAvgTemp").textContent =
-    avgTemp + (avgTemp !== "--" ? "C" : "");
+  
+  // Format temperature using user preference
+  if (avgTemp !== "--") {
+    const tempUnit = displayPreferences.tempUnit || "celsius";
+    let displayedTemp = parseFloat(avgTemp);
+    let symbol = "°C";
+    if (tempUnit === "fahrenheit") {
+      displayedTemp = (displayedTemp * 9/5) + 32;
+      symbol = "°F";
+    } else if (tempUnit === "kelvin") {
+      displayedTemp = displayedTemp + 273.15;
+      symbol = "K";
+    }
+    document.getElementById("statsAvgTemp").textContent = displayedTemp.toFixed(1) + symbol;
+  } else {
+    document.getElementById("statsAvgTemp").textContent = "--";
+  }
+  
   document.getElementById("statsAvgHumi").textContent =
     avgHumi + (avgHumi !== "--" ? "%" : "");
 }
@@ -2203,11 +2378,14 @@ function exportFilteredData() {
     return;
   }
 
+  const tempUnit = displayPreferences.tempUnit || "celsius";
+  const tempUnitSymbol = tempUnit === "fahrenheit" ? "(°F)" : tempUnit === "kelvin" ? "(K)" : "(°C)";
+  
   const headers = [
     "#",
     "Date",
     "Time",
-    "Temperature (C)",
+    `Temperature ${tempUnitSymbol}`,
     "Humidity (%)",
     "Mode",
     "Status",
@@ -2216,11 +2394,12 @@ function exportFilteredData() {
   ];
   const rows = filteredDataCache.map((record, idx) => {
     const date = new Date(record.created_at);
+    const tempDisplay = formatTemperature(record.temp);
     return [
       idx + 1,
-      date.toLocaleDateString(),
-      date.toLocaleTimeString("en-US", { hour12: false }),
-      record.temp,
+      formatDate(date),
+      formatTime(date),
+      tempDisplay,
       record.humi,
       record.mode,
       record.status,
@@ -2657,7 +2836,7 @@ function loadSettingsPage() {
 
   // Load display preferences (from localStorage or defaults)
   document.getElementById("tempUnit").value =
-    localStorage.getItem("tempUnit") || "C";
+    localStorage.getItem("tempUnit") || "celsius";
   document.getElementById("timeFormat").value =
     localStorage.getItem("timeFormat") || "24h";
   document.getElementById("dateFormat").value =
@@ -2807,6 +2986,10 @@ function saveSettings() {
   }
 
   // === SAVE DISPLAY PREFERENCES ===
+  const oldTempUnit = displayPreferences.tempUnit;
+  const oldTimeFormat = displayPreferences.timeFormat;
+  const oldDateFormat = displayPreferences.dateFormat;
+  
   localStorage.setItem("tempUnit", document.getElementById("tempUnit").value);
   localStorage.setItem(
     "timeFormat",
@@ -2816,6 +2999,17 @@ function saveSettings() {
     "dateFormat",
     document.getElementById("dateFormat").value
   );
+
+  // Check if display preferences changed
+  const displayPreferencesChanged =
+    oldTempUnit !== document.getElementById("tempUnit").value ||
+    oldTimeFormat !== document.getElementById("timeFormat").value ||
+    oldDateFormat !== document.getElementById("dateFormat").value;
+
+  if (displayPreferencesChanged) {
+    addStatus("Display preferences changed - refreshing displays...", "INFO");
+    applyDisplayPreferences();
+  }
 
   // === SAVE DATA SETTINGS ===
   localStorage.setItem(
@@ -2932,7 +3126,7 @@ function exportSettings() {
       databaseURL: FIREBASE_CONFIG.databaseURL,
     },
     display: {
-      tempUnit: localStorage.getItem("tempUnit") || "C",
+      tempUnit: localStorage.getItem("tempUnit") || "celsius",
       timeFormat: localStorage.getItem("timeFormat") || "24h",
       dateFormat: localStorage.getItem("dateFormat") || "DD/MM/YYYY",
     },
@@ -3345,6 +3539,11 @@ function runInitialization() {
   console.log("[INIT] Calling initializeCharts()");
   initializeCharts();
   addStatus("Charts initialized", "INFO");
+
+  // ====================================================================
+  // LOAD AND APPLY DISPLAY PREFERENCES
+  // ====================================================================
+  applyDisplayPreferences();
 
   // Initialize Firebase
   initializeFirebase();
