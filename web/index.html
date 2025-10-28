@@ -125,16 +125,18 @@
               <i data-feather="activity"></i>
               Current Reading
             </div>
-            <!-- TODO: Change format to --:--:-- (--:--:-- AM/PM) DD/MM/YYYY -->
+            <!-- TODO: Change format to --:--:-- DD/MM/YYYY -->
             <div class="reading-time" id="lastUpdate">--:--:--</div>
             <div class="reading-values">
               <div class="reading-value">
+                <div class="reading-label">Temperature</div>
                 <div class="reading-number" id="currentTemp">--</div>
-                <!-- TODO: Remove C because it's not needed -->
+                <div class="reading-unit">°C</div>
               </div>
               <div class="reading-value">
+                <div class="reading-label">Humidity</div>
                 <div class="reading-number" id="currentHumi">--</div>
-                <!-- TODO: Remove % because it's not needed -->
+                <div class="reading-unit">%</div>
               </div>
             </div>
           </div>
@@ -153,7 +155,6 @@
             <div class="card">
               <div class="card-header">
                 <i data-feather="trending-up"></i>
-                <!-- TODO: change Temperature (C) To Temperature(°C) or (°F) or (K) follow to Display Preferences setting  -->
                 Temperature
               </div>
               <div class="chart-container">
@@ -394,7 +395,6 @@
                   class="component-details"
                   style="font-size: 0.875rem; color: var(--text-secondary)"
                 >
-                  <!-- TODO: Change Temperature and Humidity unit follow to Display Preferences setting -->
                   <p>Temperature: <strong id="sht31-temp">--</strong></p>
                   <p>Humidity: <strong id="sht31-humi">--</strong></p>
                   <p>Last Update: <strong id="sht31-time">Never</strong></p>
@@ -1385,118 +1385,6 @@
                 </div>
               </div>
 
-              <!-- Display Preferences -->
-              <div
-                style="
-                  margin-bottom: 2rem;
-                  padding-top: 1.5rem;
-                  border-top: 1px solid var(--border-color);
-                "
-              >
-                <h3
-                  style="
-                    font-size: 1.125rem;
-                    font-weight: 700;
-                    margin-bottom: 1rem;
-                    color: var(--primary);
-                    display: flex;
-                    align-items: center;
-                    gap: 0.5rem;
-                  "
-                >
-                  <i data-feather="eye" style="width: 20px; height: 20px"></i>
-                  Display Preferences
-                </h3>
-                <div
-                  style="
-                    display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-                    gap: 1rem;
-                  "
-                >
-                  <div>
-                    <label
-                      style="
-                        display: block;
-                        font-weight: 600;
-                        margin-bottom: 0.5rem;
-                        color: var(--text-primary);
-                      "
-                      >Temperature Unit</label
-                    >
-                    <select
-                      id="tempUnit"
-                      style="
-                        width: 100%;
-                        padding: 0.5rem 0.75rem;
-                        border: 1px solid var(--border-color);
-                        border-radius: 0.5rem;
-                        font-size: 0.875rem;
-                        background-color: var(--bg-primary);
-                        color: var(--text-primary);
-                      "
-                    >
-                      <option value="celsius">Celsius (°C)</option>
-                      <option value="fahrenheit">Fahrenheit (°F)</option>
-                      <option value="kelvin">Kelvin (K)</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label
-                      style="
-                        display: block;
-                        font-weight: 600;
-                        margin-bottom: 0.5rem;
-                        color: var(--text-primary);
-                      "
-                      >Time Format</label
-                    >
-                    <select
-                      id="timeFormat"
-                      style="
-                        width: 100%;
-                        padding: 0.5rem 0.75rem;
-                        border: 1px solid var(--border-color);
-                        border-radius: 0.5rem;
-                        font-size: 0.875rem;
-                        background-color: var(--bg-primary);
-                        color: var(--text-primary);
-                      "
-                    >
-                      <option value="24h">24-hour </option>
-                      <option value="12h">12-hour </option>
-                    </select>
-                  </div>
-                  <div>
-                    <label
-                      style="
-                        display: block;
-                        font-weight: 600;
-                        margin-bottom: 0.5rem;
-                        color: var(--text-primary);
-                      "
-                      >Date Format</label
-                    >
-                    <select
-                      id="dateFormat"
-                      style="
-                        width: 100%;
-                        padding: 0.5rem 0.75rem;
-                        border: 1px solid var(--border-color);
-                        border-radius: 0.5rem;
-                        font-size: 0.875rem;
-                        background-color: var(--bg-primary);
-                        color: var(--text-primary);
-                      "
-                    >
-                      <option value="DD/MM/YYYY">DD/MM/YYYY </option>
-                      <option value="MM/DD/YYYY">MM/DD/YYYY </option>
-                      <option value="YYYY-MM-DD">YYYY-MM-DD </option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
               <!-- Chart Settings -->
               <div
                 style="
@@ -1800,8 +1688,7 @@
       <footer class="footer">
         <div class="footer-item">
           <i data-feather="clock" style="width: 16px; height: 16px"></i>
-          <!-- TODO: Change time format follow to Display Preferences setting -->
-          System Time: <strong id="footerTime">--:--:--</strong>
+          System Time: <strong id="footerDateTime">--/--/---- --:--:--</strong>
         </div>
         <div class="footer-item">DataLogger System</div>
       </footer>
