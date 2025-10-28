@@ -1,4 +1,11 @@
-﻿// Initialize Feather Icons
+﻿// TODO: remove Date Format, use default is DD/MM/YYYY
+// TODO: remove Temperature Unit C from current display, use formatting function instead
+// TODO: change Temperature (C) To Temperature(°C) or (°F) or (K) follow to Display Preferences setting
+// TODO: Fix chart y-axis label to reflect temperature unit preference
+// TODO: Temp Min (C) and Temp Max (C) in Data Management should reflect user preference follow Display Preferences setting
+// TODO: Fix chart temperature follow Temperature Unit
+
+// Initialize Feather Icons
 feather.replace();
 
 // ====================================================================
@@ -88,6 +95,7 @@ let stateSync = {
 let displayPreferences = {
   tempUnit: "celsius", // celsius, fahrenheit, kelvin
   timeFormat: "24h",   // 24h or 12h
+  // TODO: remove dateFormat, use DD/MM/YYYY
   dateFormat: "DD/MM/YYYY", // DD/MM/YYYY, MM/DD/YYYY, YYYY-MM-DD
 };
 
@@ -132,7 +140,7 @@ const maxChartInitRetries = 10;
  */
 function formatTemperature(celsius) {
   if (celsius === null || celsius === undefined || isNaN(celsius)) {
-    return "N/A";
+    return "--";
   }
 
   const unit = displayPreferences.tempUnit || "celsius";
@@ -141,7 +149,7 @@ function formatTemperature(celsius) {
 
   switch (unit) {
     case "fahrenheit":
-      value = (celsius * 9/5) + 32;
+      value = (celsius * 9 / 5) + 32;
       symbol = "°F";
       break;
     case "kelvin":
@@ -164,12 +172,12 @@ function formatTemperature(celsius) {
  */
 function formatTime(date) {
   if (!date) return "--:--:--";
-  
+
   const d = date instanceof Date ? date : new Date(date);
   if (isNaN(d.getTime())) return "--:--:--";
 
   const format = displayPreferences.timeFormat || "24h";
-  
+
   if (format === "12h") {
     return d.toLocaleTimeString("en-US", {
       hour: "2-digit",
@@ -195,7 +203,7 @@ function formatTime(date) {
  */
 function formatDate(date) {
   if (!date) return "--/--/--";
-  
+
   const d = date instanceof Date ? date : new Date(date);
   if (isNaN(d.getTime())) return "--/--/--";
 
@@ -205,8 +213,10 @@ function formatDate(date) {
   const year = d.getFullYear();
 
   switch (format) {
+    // TODO: remove MM/DD/YYYY
     case "MM/DD/YYYY":
       return `${month}/${day}/${year}`;
+    // TODO: remove YYYY-MM-DD
     case "YYYY-MM-DD":
       return `${year}-${month}-${day}`;
     case "DD/MM/YYYY":
@@ -231,6 +241,7 @@ function applyDisplayPreferences() {
   // Load from localStorage
   displayPreferences.tempUnit = localStorage.getItem("tempUnit") || "celsius";
   displayPreferences.timeFormat = localStorage.getItem("timeFormat") || "24h";
+  // TODO: remove dateFormat, use DD/MM/YYYY
   displayPreferences.dateFormat = localStorage.getItem("dateFormat") || "DD/MM/YYYY";
 
   addStatus(
@@ -769,18 +780,19 @@ function syncUIWithHardwareState(state) {
 // ====================================================================
 function updateCurrentDisplay() {
   // Use formatting function for temperature
-  const tempDisplay = currentTemp !== null ? formatTemperature(currentTemp) : "N/A";
+  const tempDisplay = currentTemp !== null ? formatTemperature(currentTemp) : "--";
   document.getElementById("currentTemp").textContent = tempDisplay;
-  
+
   // Humidity stays as percentage
   document.getElementById("currentHumi").textContent =
-    currentHumi !== null ? currentHumi.toFixed(1) + "%" : "N/A";
+    currentHumi !== null ? currentHumi.toFixed(1) + "%" : "--";
 
   // Use formatting function for time
   const timeStr = lastReadingTimestamp
     ? formatTime(new Date(lastReadingTimestamp))
     : "--:--:--";
-  document.getElementById("lastUpdate").textContent = `Updated at ${timeStr}`;
+  // TODO: Change format to --:--:-- (--:--:-- AM/PM) DD/MM/YYYY
+  document.getElementById("lastUpdate").textContent = `${timeStr}`;
 }
 
 // ====================================================================
@@ -913,6 +925,7 @@ function initializeCharts() {
         labels: [],
         datasets: [
           {
+            // TODO: change label based on user preference °C, °F, or K
             label: "Temperature (C)",
             data: [],
             borderColor: "#06B6D4",
@@ -946,6 +959,7 @@ function initializeCharts() {
             cornerRadius: 8,
             displayColors: false,
             callbacks: {
+              // TODO: change unit based on user preference °C, °F, or K
               label: function (context) {
                 return `Temperature: ${context.parsed.y.toFixed(1)}C`;
               },
@@ -962,6 +976,7 @@ function initializeCharts() {
             },
             ticks: {
               callback: function (value) {
+                // TODO: change unit based on user preference °C, °F, or K
                 return value.toFixed(1) + "C";
               },
             },
@@ -1294,7 +1309,8 @@ document.getElementById("deviceBtn").addEventListener("click", function () {
     currentHumi = null;
     document.getElementById("currentTemp").textContent = "--";
     document.getElementById("currentHumi").textContent = "--";
-    document.getElementById("lastUpdate").textContent = "Updated at --:--:--";
+    // TODO: Change format to --:--:-- (--:--:-- AM/PM) DD/MM/YYYY
+    document.getElementById("lastUpdate").textContent = "--:--:--";
   }
 
   addStatus(`Device ${command} sent`, "MQTT");
@@ -2187,8 +2203,10 @@ function applyDataFilters() {
     mode: document.getElementById("filterMode").value,
     status: document.getElementById("filterStatus").value,
     tempMin:
+    //TODO: Get min temperature filter value follow the local setting (C/F/K)
       parseFloat(document.getElementById("filterTempMin").value) || -Infinity,
     tempMax:
+    //TODO: Get min temperature filter value follow the local setting (C/F/K)
       parseFloat(document.getElementById("filterTempMax").value) || Infinity,
     humiMin:
       parseFloat(document.getElementById("filterHumiMin").value) || -Infinity,
@@ -2350,14 +2368,14 @@ function updateDataStatistics(data) {
 
   document.getElementById("statsTotal").textContent = data.length;
   document.getElementById("statsSuccess").textContent = successRate + "%";
-  
+
   // Format temperature using user preference
   if (avgTemp !== "--") {
     const tempUnit = displayPreferences.tempUnit || "celsius";
     let displayedTemp = parseFloat(avgTemp);
     let symbol = "°C";
     if (tempUnit === "fahrenheit") {
-      displayedTemp = (displayedTemp * 9/5) + 32;
+      displayedTemp = (displayedTemp * 9 / 5) + 32;
       symbol = "°F";
     } else if (tempUnit === "kelvin") {
       displayedTemp = displayedTemp + 273.15;
@@ -2367,7 +2385,7 @@ function updateDataStatistics(data) {
   } else {
     document.getElementById("statsAvgTemp").textContent = "--";
   }
-  
+
   document.getElementById("statsAvgHumi").textContent =
     avgHumi + (avgHumi !== "--" ? "%" : "");
 }
@@ -2380,7 +2398,7 @@ function exportFilteredData() {
 
   const tempUnit = displayPreferences.tempUnit || "celsius";
   const tempUnitSymbol = tempUnit === "fahrenheit" ? "(°F)" : tempUnit === "kelvin" ? "(K)" : "(°C)";
-  
+
   const headers = [
     "#",
     "Date",
@@ -2989,7 +3007,7 @@ function saveSettings() {
   const oldTempUnit = displayPreferences.tempUnit;
   const oldTimeFormat = displayPreferences.timeFormat;
   const oldDateFormat = displayPreferences.dateFormat;
-  
+
   localStorage.setItem("tempUnit", document.getElementById("tempUnit").value);
   localStorage.setItem(
     "timeFormat",

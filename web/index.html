@@ -125,15 +125,16 @@
               <i data-feather="activity"></i>
               Current Reading
             </div>
-            <div class="reading-time" id="lastUpdate">Updated at --:--:--</div>
+            <!-- TODO: Change format to --:--:-- (--:--:-- AM/PM) DD/MM/YYYY -->
+            <div class="reading-time" id="lastUpdate">--:--:--</div>
             <div class="reading-values">
               <div class="reading-value">
                 <div class="reading-number" id="currentTemp">--</div>
-                <div class="reading-unit">C</div>
+                <!-- TODO: Remove C because it's not needed -->
               </div>
               <div class="reading-value">
                 <div class="reading-number" id="currentHumi">--</div>
-                <div class="reading-unit">%</div>
+                <!-- TODO: Remove % because it's not needed -->
               </div>
             </div>
           </div>
@@ -152,7 +153,8 @@
             <div class="card">
               <div class="card-header">
                 <i data-feather="trending-up"></i>
-                Temperature (C)
+                <!-- TODO: change Temperature (C) To Temperature(°C) or (°F) or (K) follow to Display Preferences setting  -->
+                Temperature
               </div>
               <div class="chart-container">
                 <canvas id="tempChart"></canvas>
@@ -176,7 +178,7 @@
             <div class="card">
               <div class="card-header">
                 <i data-feather="droplet"></i>
-                Humidity (%)
+                Humidity
               </div>
               <div class="chart-container">
                 <canvas id="humiChart"></canvas>
@@ -270,7 +272,7 @@
                         font-weight: 600;
                       "
                     >
-                      Temp (C)
+                      Temp
                     </th>
                     <th
                       style="
@@ -279,7 +281,7 @@
                         font-weight: 600;
                       "
                     >
-                      Humidity (%)
+                      Humidity
                     </th>
                     <th
                       style="
@@ -392,6 +394,7 @@
                   class="component-details"
                   style="font-size: 0.875rem; color: var(--text-secondary)"
                 >
+                  <!-- TODO: Change Temperature and Humidity unit follow to Display Preferences setting -->
                   <p>Temperature: <strong id="sht31-temp">--</strong></p>
                   <p>Humidity: <strong id="sht31-humi">--</strong></p>
                   <p>Last Update: <strong id="sht31-time">Never</strong></p>
@@ -965,7 +968,7 @@
                         font-weight: 600;
                       "
                     >
-                      Temp (C)
+                      Temp
                     </th>
                     <th
                       style="
@@ -974,7 +977,7 @@
                         font-weight: 600;
                       "
                     >
-                      Humidity (%)
+                      Humidity
                     </th>
                     <th
                       style="
@@ -1797,6 +1800,7 @@
       <footer class="footer">
         <div class="footer-item">
           <i data-feather="clock" style="width: 16px; height: 16px"></i>
+          <!-- TODO: Change time format follow to Display Preferences setting -->
           System Time: <strong id="footerTime">--:--:--</strong>
         </div>
         <div class="footer-item">DataLogger System</div>
