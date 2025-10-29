@@ -1496,7 +1496,7 @@ function renderLiveDataTable() {
 
   tbody.innerHTML = filtered
     .map((data, idx) => {
-      const time = formatTime(new Date(data.time));
+      const dateTime = formatDateTime(new Date(data.time));
       const tempDisplay = formatTemperature(data.temp);
       const statusClass =
         data.status === "success" ? "connected" : "disconnected";
@@ -1505,7 +1505,7 @@ function renderLiveDataTable() {
       return `
                     <tr style="border-bottom: 1px solid var(--border-color);">
                         <td style="padding: 0.75rem;">${idx + 1}</td>
-                        <td style="padding: 0.75rem;">${time}</td>
+                        <td style="padding: 0.75rem;">${dateTime}</td>
                         <td style="padding: 0.75rem;">${tempDisplay}</td>
                         <td style="padding: 0.75rem;">${data.humi.toFixed(
         1
