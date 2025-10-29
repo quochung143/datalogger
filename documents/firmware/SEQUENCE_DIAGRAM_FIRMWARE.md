@@ -1,6 +1,6 @@
-# Complete Firmware System - Sequence Diagrams
+# ESP32 Firmware - Sequence Diagrams
 
-This document illustrates the time-ordered interactions between STM32 and ESP32 firmware components in the complete system.
+This document contains all sequence diagrams for the ESP32 firmware architecture, illustrating time-ordered interactions between components, systems, and external entities.
 
 ## Complete System Initialization Sequence
 

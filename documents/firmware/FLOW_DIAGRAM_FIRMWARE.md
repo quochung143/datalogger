@@ -1,614 +1,549 @@
-# Complete Firmware System - Flow Diagram
+# ESP32 Firmware - Flow Diagrams
 
-This document describes the integrated control flow of the complete firmware system including STM32 data logger and ESP32 IoT bridge.
+This document contains all flow diagrams for the ESP32 firmware architecture, showing control flow, decision logic, and process workflows.
 
-## System Startup and Initialization Flow
+## Main Application Initialization Flow
 
 ```mermaid
 flowchart TD
-    Start([Power ON Both Devices]) --> PowerSTM32[STM32 Power Up]
-    Start --> PowerESP32[ESP32 Power Up]
+    Start([System Power On]) --> NVSInit[Initialize NVS Flash]
+    NVSInit --> EventInit[Initialize Event Loop]
+    EventInit --> NetifInit[Initialize Network Interface]
     
-    PowerSTM32 --> InitSTM32[STM32 System Init]
-    InitSTM32 --> InitSTM32UART[Initialize UART1 115200]
-    InitSTM32UART --> InitI2C[Initialize I2C1 100kHz]
-    InitI2C --> InitSPI[Initialize SPI1 & SPI2]
-    InitSPI --> InitSHT3X[Initialize SHT3X Sensor 0x44]
-    InitSHT3X --> InitDS3231[Initialize DS3231 RTC 0x68]
-    InitDS3231 --> InitSDCard[Initialize SD Card Manager]
-    InitSDCard --> InitDisplay[Initialize ILI9225 Display]
-    InitDisplay --> STM32Ready[STM32 Main Loop Ready]
+    NetifInit --> InitWiFi[Initialize WiFi Manager]
+    InitWiFi --> InitUART[Initialize STM32 UART]
+    InitUART --> InitComponents[Initialize All Components]
     
-    PowerESP32 --> InitNVS[Initialize NVS Flash]
-    InitNVS --> InitNetif[Initialize Network Interface]
-    InitNetif --> InitWiFi[Initialize WiFi Manager]
-    InitWiFi --> InitESP32UART[Initialize UART1 115200]
-    InitESP32UART --> InitComponents[Initialize MQTT, Relay, Parser, Buttons]
-    InitComponents --> ConnectWiFi[WiFi Connect with 15s timeout]
+    InitComponents --> CheckInit{All Components<br/>Initialized?}
+    CheckInit -->|No| Restart[ESP Restart]
+    CheckInit -->|Yes| StartWiFi[Start WiFi Connection]
     
-    ConnectWiFi --> CheckWiFi{WiFi Connected?}
-    CheckWiFi -->|Yes| WaitStable[Wait 4s for network stability]
-    CheckWiFi -->|No| ESP32Ready
-    WaitStable --> StartMQTT[Start MQTT Client]
-    StartMQTT --> ESP32Ready[ESP32 Main Loop Ready]
+    StartWiFi --> ConnectWiFi[WiFi Manager Connect<br/>15s timeout]
+    ConnectWiFi --> CheckWiFi{WiFi Connected<br/>within 15s?}
     
-    STM32Ready --> BothReady{Both Systems Ready?}
-    ESP32Ready --> BothReady
-    BothReady -->|Yes| SystemRunning[System Fully Operational]
+    CheckWiFi -->|Yes| WaitStable[Wait 4s for Network Stability]
+    CheckWiFi -->|No| ContinueServices[Continue with Services<br/>WiFi will retry in background]
+    
+    WaitStable --> StartMQTT[Start MQTT Handler]
+    StartMQTT --> StartServices[Start All Services]
+    ContinueServices --> StartServices
+    
+    StartServices --> StartTasks[Start FreeRTOS Tasks:<br/>- Button Handler Task<br/>- UART RX Task]
+    StartTasks --> MainLoop[Enter Main Monitoring Loop]
+    
+    MainLoop --> MonitorLoop{Main Loop Running}
+    MonitorLoop --> CheckConnections[Monitor WiFi/MQTT State]
+    CheckConnections --> ProcessCallbacks[Process Component Callbacks]
+    ProcessCallbacks --> LogStatus[Log System Status]
+    LogStatus --> Delay[Delay 100ms]
+    Delay --> MonitorLoop
     
     style Start fill:#90EE90
-    style BothReady fill:#FFD700
-    style SystemRunning fill:#87CEEB
+    style MainLoop fill:#FFD700
+    style MonitorLoop fill:#FFD700
+    style Restart fill:#FF6B6B
 ```
 
-## Single Measurement End-to-End Flow
+## WiFi Connection Management Flow
 
 ```mermaid
 flowchart TD
-    Start([User/Button Request Single]) --> Source{Request Source?}
+    Start([WiFi Manager Start]) --> CheckConfig{WiFi Config<br/>Valid?}
     
-    Source -->|Web Interface| WebMQTT[Web sends to MQTT broker]
-    Source -->|ESP32 Button| ButtonPress[ESP32 button pressed GPIO16]
+    CheckConfig -->|No| ConfigError[Log Configuration Error]
+    CheckConfig -->|Yes| StartConnect[Begin Connection Process]
     
-    WebMQTT --> ESP32MQTT[ESP32 receives on datalogger/stm32/command]
-    ButtonPress --> CheckDevice{Device ON?}
-    CheckDevice -->|No| IgnoreButton[Log: Ignored - device OFF]
-    CheckDevice -->|Yes| SendSingle
+    ConfigError --> Failed[WiFi State: FAILED]
     
-    ESP32MQTT --> ForwardUART[ESP32 forwards via UART]
-    ButtonPress --> SendSingle[ESP32 sends SINGLE command]
+    StartConnect --> SetConnecting[Set State: CONNECTING]
+    SetConnecting --> InitStation[Initialize Station Mode]
+    InitStation --> RegisterEvents[Register WiFi Event Handlers]
+    RegisterEvents --> SetCredentials[Set SSID/Password]
     
-    ForwardUART --> STM32RX[STM32 UART RX Interrupt]
-    SendSingle --> STM32RX
+    SetCredentials --> ConnectAttempt[WiFi Connect Attempt]
+    ConnectAttempt --> WaitResult{Connection Result}
     
-    STM32RX --> RingBuffer[Store in Ring Buffer]
-    RingBuffer --> UARTHandle[UART_Handle detects newline]
-    UARTHandle --> ParseCmd[Parse: SINGLE]
-    ParseCmd --> CallSHT3X[SHT3X_Single HIGH repeatability]
+    WaitResult -->|Success| Connected[WiFi State: CONNECTED]
+    WaitResult -->|Failed| CheckRetry{Retry Count<br/>< Max (5)?}
+    WaitResult -->|Timeout| CheckRetry
     
-    CallSHT3X --> I2CCmd[I2C Write 0x2400]
-    I2CCmd --> WaitMeasure[Delay 15ms for measurement]
-    WaitMeasure --> I2CRead[I2C Read 6 bytes]
-    I2CRead --> CheckI2C{I2C OK?}
+    CheckRetry -->|Yes| IncRetry[Increment Retry Count]
+    CheckRetry -->|No| Failed
     
-    CheckI2C -->|No| SetError[temp=0.0, hum=0.0]
-    CheckI2C -->|Yes| ValidateCRC{CRC Valid?}
-    ValidateCRC -->|No| SetError
-    ValidateCRC -->|Yes| ParseData[Parse temperature & humidity]
+    IncRetry --> DelayRetry[Wait 2 seconds]
+    DelayRetry --> ConnectAttempt
     
-    SetError --> UpdateDM[DataManager_UpdateSingle]
-    ParseData --> UpdateDM
-    UpdateDM --> SetFlag[Set data_ready flag]
-    SetFlag --> NextLoop[Wait for next main loop]
+    Connected --> GetIPInfo[Get IP Address & Network Info]
+    GetIPInfo --> GetRSSI[Get Signal Strength (RSSI)]
+    GetRSSI --> LogSuccess[Log Connection Success]
+    LogSuccess --> EnableEvents[Enable Disconnect Monitoring]
+    EnableEvents --> Success[Connection Complete]
     
-    NextLoop --> CheckMQTT{MQTT Connected?}
-    CheckMQTT -->|Yes| GetTime[DS3231_Get_Time]
-    CheckMQTT -->|No| BufferSD[SDCardManager_WriteData]
+    Failed --> LogFailure[Log Connection Failure]
+    LogFailure --> SetFailedState[Set State: FAILED]
+    SetFailedState --> ScheduleRetry[Schedule Background Retry]
     
-    GetTime --> FormatJSON[Format JSON with timestamp]
-    FormatJSON --> TransmitUART[HAL_UART_Transmit to ESP32]
-    TransmitUART --> ESP32Parse[ESP32 JSON Parser]
+    Success --> MonitorConnection{Monitor Connection}
+    MonitorConnection -->|Disconnect Event| HandleDisconnect[Handle Disconnection]
+    MonitorConnection -->|Stable| MonitorConnection
     
-    ESP32Parse --> ValidJSON{JSON Valid?}
-    ValidJSON -->|No| LogError[Log parse error]
-    ValidJSON -->|Yes| MQTTPublish[MQTT Publish to datalogger/stm32/single/data]
-    
-    MQTTPublish --> WebReceive[Web Interface receives data]
-    BufferSD --> WaitMQTT[Wait for MQTT reconnection]
-    
-    IgnoreButton --> Done([Done])
-    LogError --> Done
-    WebReceive --> Done
-    WaitMQTT --> Done
+    HandleDisconnect --> SetDisconnected[Set State: DISCONNECTED]
+    SetDisconnected --> AutoRetry[Start Auto-Retry Process]
+    AutoRetry --> DelayRetry
     
     style Start fill:#90EE90
-    style CheckDevice fill:#FFD700
-    style CheckI2C fill:#FFD700
-    style CheckMQTT fill:#FFD700
-    style MQTTPublish fill:#87CEEB
-    style BufferSD fill:#FF6B6B
+    style Connected fill:#87CEEB
+    style Failed fill:#FF6B6B
+    style Success fill:#98FB98
 ```
 
-## Periodic Measurement Flow
+## MQTT Handler Flow
 
 ```mermaid
 flowchart TD
-    Start([PERIODIC ON Command]) --> ESP32Receive[ESP32 receives command]
-    ESP32Receive --> UpdateState[ESP32: g_periodic_active = true]
-    UpdateState --> ForwardSTM32[ESP32 forwards PERIODIC ON to STM32]
-    ForwardSTM32 --> PublishState[ESP32 publishes state to MQTT]
+    Start([MQTT Handler Start]) --> CheckWiFi{WiFi<br/>Connected?}
     
-    PublishState --> STM32Parse[STM32 parses PERIODIC ON]
-    STM32Parse --> CallPeriodic[SHT3X_Periodic 1MPS HIGH]
-    CallPeriodic --> I2CStart[I2C Write 0x2032]
-    I2CStart --> CheckI2C{I2C OK?}
+    CheckWiFi -->|No| WaitWiFi[Wait for WiFi Connection]
+    CheckWiFi -->|Yes| CheckStable{Network Stable<br/>for 4s?}
     
-    CheckI2C -->|No| SetError[temp=0.0, hum=0.0]
-    CheckI2C -->|Yes| UpdateMode[currentState = PERIODIC_1MPS]
-    UpdateMode --> InitTiming[Initialize next_fetch_ms]
-    InitTiming --> FirstFetch[Fetch first data]
+    WaitWiFi --> CheckWiFi
+    CheckStable -->|No| WaitStable[Wait for Stability]
+    CheckStable -->|Yes| InitClient[Initialize ESP MQTT Client]
     
-    SetError --> UpdateDM[DataManager_UpdatePeriodic]
-    FirstFetch --> UpdateDM
-    UpdateDM --> MainLoop[STM32 Main Loop]
+    WaitStable --> CheckStable
     
-    MainLoop --> CheckTime{Time to fetch?}
-    CheckTime -->|No| CheckMQTTLoop
-    CheckTime -->|Yes| FetchNow[SHT3X_FetchData]
-    FetchNow --> CheckFetch{Fetch OK?}
+    InitClient --> SetConfig[Configure MQTT Settings:<br/>- Broker URI<br/>- Client ID<br/>- Credentials]
+    SetConfig --> RegisterCallbacks[Register Event Callbacks]
+    RegisterCallbacks --> StartClient[esp_mqtt_client_start()]
     
-    CheckFetch -->|No| UseError[Use 0.0 values]
-    CheckFetch -->|Yes| UseData[Use fetched data]
-    UseError --> DataReady
-    UseData --> DataReady[DataManager_UpdatePeriodic]
+    StartClient --> WaitEvent{MQTT Event?}
     
-    DataReady --> CheckMQTTLoop{MQTT Connected?}
-    CheckMQTTLoop -->|Yes| SendLive[Send JSON to ESP32]
-    CheckMQTTLoop -->|No| BufferSD[Buffer to SD Card]
+    WaitEvent -->|CONNECTED| HandleConnected[Handle Connection]
+    WaitEvent -->|DISCONNECTED| HandleDisconnected[Handle Disconnection]
+    WaitEvent -->|ERROR| HandleError[Handle Error]
+    WaitEvent -->|DATA| HandleData[Handle Incoming Data]
     
-    SendLive --> ESP32Process[ESP32 publishes to MQTT]
-    BufferSD --> CheckFull{SD Buffer Full?}
-    CheckFull -->|Yes| Overwrite[Circular buffer overwrites oldest]
-    CheckFull -->|No| StoreOK[Store successfully]
-    Overwrite --> MainLoop
-    StoreOK --> MainLoop
+    HandleConnected --> SetConnected[Set connected = true]
+    SetConnected --> ResetRetries[Reset retry_count = 0]
+    ResetRetries --> SubscribeTopics[Subscribe to Command Topics]
+    SubscribeTopics --> SetReconnectFlag[Set mqtt_reconnected flag]
+    SetReconnectFlag --> LogConnected[Log MQTT Connected]
+    LogConnected --> WaitEvent
     
-    ESP32Process --> WebUpdate[Web receives periodic data]
-    WebUpdate --> MainLoop
+    HandleDisconnected --> SetDisconnected[Set connected = false]
+    SetDisconnected --> IncRetries[Increment retry_count]
+    IncRetries --> CheckMaxRetries{retry_count<br/>< MAX_RETRIES?}
+    CheckMaxRetries -->|Yes| CalcBackoff[Calculate Backoff:<br/>min(60s, 2^retry * 1s)]
+    CheckMaxRetries -->|No| StopRetries[Stop Retrying]
+    CalcBackoff --> DelayBackoff[Wait Backoff Period]
+    DelayBackoff --> StartClient
+    StopRetries --> LogGiveUp[Log Max Retries Reached]
+    LogGiveUp --> WaitEvent
     
-    MainLoop --> CheckStop{PERIODIC OFF<br/>command?}
-    CheckStop -->|No| CheckTime
-    CheckStop -->|Yes| StopPeriodic[SHT3X_PeriodicStop]
-    StopPeriodic --> ResetState[currentState = IDLE]
-    ResetState --> Done([Done])
+    HandleError --> LogError[Log Error Details]
+    LogError --> HandleDisconnected
+    
+    HandleData --> ParseTopic[Parse Topic & Payload]
+    ParseTopic --> RouteMessage[Route to Appropriate Handler]
+    RouteMessage --> WaitEvent
     
     style Start fill:#90EE90
-    style CheckI2C fill:#FFD700
-    style CheckMQTTLoop fill:#FFD700
-    style CheckFull fill:#FFD700
-    style BufferSD fill:#FF6B6B
+    style SetConnected fill:#87CEEB
+    style StopRetries fill:#FF6B6B
+    style HandleData fill:#FFD700
 ```
 
-## MQTT Connection State Management Flow
+## UART Communication Flow
 
 ```mermaid
 flowchart TD
-    Start([System Running]) --> MonitorWiFi[ESP32 monitors WiFi state]
+    Start([UART Init]) --> ConfigPort[Configure UART1:<br/>- 115200 baud<br/>- 8N1 format<br/>- TX: GPIO17, RX: GPIO16]
+    ConfigPort --> AllocBuffer[Allocate Ring Buffer<br/>(512 bytes)]
+    AllocBuffer --> InstallDriver[Install UART Driver]
+    InstallDriver --> RegisterCallback[Register Data Callback]
+    RegisterCallback --> StartRXTask[Start UART RX Task]
+    StartRXTask --> InitComplete[UART Ready]
     
-    MonitorWiFi --> CheckWiFi{WiFi State?}
+    InitComplete --> WaitData{Wait for Data}
     
-    CheckWiFi -->|CONNECTED| CheckStable{Stable for 4s?}
-    CheckWiFi -->|DISCONNECTED| StopMQTT[Stop MQTT Handler]
-    CheckWiFi -->|FAILED| WaitRetry[Wait 5s for retry]
-    CheckWiFi -->|CONNECTING| MonitorWiFi
+    WaitData -->|STM32 Sends Data| ReceiveBytes[UART ISR: Receive Bytes]
+    WaitData -->|Send Command| SendCommand[Transmit Command to STM32]
     
-    WaitRetry --> RetryWiFi[WiFi_Connect]
-    RetryWiFi --> MonitorWiFi
+    ReceiveBytes --> WriteBuffer[Write to Ring Buffer]
+    WriteBuffer --> CheckLine{Complete Line<br/>Available?}
+    CheckLine -->|Yes| ExtractLine[Extract Line from Buffer]
+    CheckLine -->|No| WaitData
     
-    CheckStable -->|Yes| CheckMQTTStart{MQTT Started?}
-    CheckStable -->|No| MonitorWiFi
+    ExtractLine --> ValidateLine{Line Valid &<br/>Non-Empty?}
+    ValidateLine -->|Yes| CallCallback[Call Data Received Callback]
+    ValidateLine -->|No| WaitData
     
-    CheckMQTTStart -->|No| StartMQTT[MQTT_Handler_Start]
-    CheckMQTTStart -->|Yes| CheckMQTTConn
+    CallCallback --> ProcessJSON[JSON Parser Process Line]
+    ProcessJSON --> WaitData
     
-    StartMQTT --> Connecting[MQTT Connecting to broker]
-    Connecting --> BrokerResponse{Broker Response?}
-    
-    BrokerResponse -->|CONNECTED| SetConnected[connected = true]
-    BrokerResponse -->|ERROR| IncRetry[Increment retry_count]
-    
-    SetConnected --> Subscribe[Subscribe to command topics]
-    Subscribe --> SetReconnFlag[Set mqtt_reconnected flag]
-    SetReconnFlag --> NotifySTM32Conn[Send MQTT CONNECTED to STM32]
-    NotifySTM32Conn --> CheckMQTTConn
-    
-    IncRetry --> BackoffDelay[Exponential backoff: min 60s, 2^retry]
-    BackoffDelay --> CheckMaxRetry{Max retries?}
-    CheckMaxRetry -->|No| StartMQTT
-    CheckMaxRetry -->|Yes| WaitReset[Wait 60s]
-    WaitReset --> ResetRetry[Reset retry_count]
-    ResetRetry --> StartMQTT
-    
-    CheckMQTTConn{MQTT State?}
-    CheckMQTTConn -->|CONNECTED| Active[Handle messages]
-    CheckMQTTConn -->|DISCONNECTED| CheckWiFiState
-    
-    Active --> CheckMsg{New Message?}
-    CheckMsg -->|Yes| RouteMsg[Route to handler]
-    CheckMsg -->|No| CheckWiFiState
-    
-    RouteMsg --> Active
-    
-    CheckWiFiState{WiFi still connected?}
-    CheckWiFiState -->|Yes| CheckMQTTConn
-    CheckWiFiState -->|No| StopMQTT
-    
-    StopMQTT --> UpdateMQTTState[mqtt_current_state = DISCONNECTED]
-    UpdateMQTTState --> NotifySTM32Disc[Send MQTT DISCONNECTED to STM32]
-    NotifySTM32Disc --> STM32Response[STM32 switches to SD buffering]
-    STM32Response --> MonitorWiFi
+    SendCommand --> FormatCommand[Format Command<br/>(Add '\n' terminator)]
+    FormatCommand --> TransmitUART[UART Transmit Bytes]
+    TransmitUART --> LogCommand[Log Transmitted Command]
+    LogCommand --> WaitData
     
     style Start fill:#90EE90
-    style CheckWiFi fill:#FFD700
-    style BrokerResponse fill:#FFD700
-    style CheckMQTTConn fill:#FFD700
-    style Active fill:#87CEEB
+    style InitComplete fill:#87CEEB
+    style CallCallback fill:#FFD700
+    style ProcessJSON fill:#98FB98
 ```
 
-## Relay Control End-to-End Flow
+## JSON Sensor Data Processing Flow
 
 ```mermaid
 flowchart TD
-    Start([Relay Control Request]) --> Source{Control Source?}
+    Start([JSON Line Received]) --> ParseJSON[Parse JSON with cJSON]
+    ParseJSON --> ValidateJSON{JSON Valid?}
     
-    Source -->|Web Interface| WebCmd[Web sends to datalogger/esp32/relay/control]
-    Source -->|ESP32 Button| ButtonCmd[GPIO5 button pressed]
+    ValidateJSON -->|No| LogParseError[Log JSON Parse Error]
+    ValidateJSON -->|Yes| ExtractFields[Extract Required Fields]
     
-    WebCmd --> ESP32MQTT[ESP32 MQTT callback]
-    ButtonCmd --> ProcessButton[on_button_relay_pressed]
+    LogParseError --> Done([Done])
     
-    ESP32MQTT --> ParseCmd{Command?}
-    ParseCmd -->|ON| SetOn[Relay_SetState true]
-    ParseCmd -->|OFF| SetOff[Relay_SetState false]
-    ParseCmd -->|TOGGLE| ToggleRelay[Relay_Toggle]
+    ExtractFields --> CheckMode{Extract 'mode'<br/>Field}
+    CheckMode -->|Missing| MissingMode[Log Missing Mode]
+    CheckMode -->|Present| ValidateMode{Mode Valid?}
     
-    ProcessButton --> ToggleRelay
+    MissingMode --> Done
+    ValidateMode -->|Invalid| InvalidMode[Log Invalid Mode]
+    ValidateMode -->|SINGLE| ProcessSingle[Process Single Mode Data]
+    ValidateMode -->|PERIODIC| ProcessPeriodic[Process Periodic Mode Data]
     
-    SetOn --> UpdateGPIO[GPIO4 = HIGH]
-    SetOff --> UpdateGPIO2[GPIO4 = LOW]
-    ToggleRelay --> UpdateGPIO3[Toggle GPIO4]
+    InvalidMode --> Done
     
-    UpdateGPIO --> UpdateState[g_device_on = true]
-    UpdateGPIO2 --> UpdateState2[g_device_on = false]
-    UpdateGPIO3 --> UpdateState3[Toggle g_device_on]
+    ProcessSingle --> ExtractSingleData[Extract:<br/>- timestamp<br/>- temperature<br/>- humidity]
+    ProcessPeriodic --> ExtractPeriodicData[Extract:<br/>- timestamp<br/>- temperature<br/>- humidity]
     
-    UpdateState --> CheckOff
-    UpdateState2 --> CheckOff{Relay turned OFF?}
-    UpdateState3 --> CheckOff
+    ExtractSingleData --> ValidateSingleData{Data Complete<br/>& Valid?}
+    ExtractPeriodicData --> ValidatePeriodicData{Data Complete<br/>& Valid?}
     
-    CheckOff -->|Yes| ForcePeriodic[Force g_periodic_active = false]
-    CheckOff -->|No| StateCallback
+    ValidateSingleData -->|Yes| CallSingleCallback[Call Single Data Callback]
+    ValidateSingleData -->|No| LogSingleError[Log Single Data Error]
     
-    ForcePeriodic --> SendPOff[Send PERIODIC OFF to STM32]
-    SendPOff --> StateCallback[Relay callback triggered]
+    ValidatePeriodicData -->|Yes| CallPeriodicCallback[Call Periodic Data Callback]
+    ValidatePeriodicData -->|No| LogPeriodicError[Log Periodic Data Error]
     
-    StateCallback --> PublishState[update_and_publish_state]
-    PublishState --> Delay500[Wait 500ms for STM32 boot]
-    Delay500 --> CheckMQTT{MQTT Connected?}
+    CallSingleCallback --> FormatSingleMQTT[Format Single MQTT Message]
+    CallPeriodicCallback --> FormatPeriodicMQTT[Format Periodic MQTT Message]
     
-    CheckMQTT -->|Yes| SendConn[Send MQTT CONNECTED to STM32]
-    CheckMQTT -->|No| SendDisc[Send MQTT DISCONNECTED to STM32]
+    FormatSingleMQTT --> PublishSingle[Publish to:<br/>datalogger/stm32/single/data]
+    FormatPeriodicMQTT --> PublishPeriodic[Publish to:<br/>datalogger/stm32/periodic/data]
     
-    SendConn --> STM32Process[STM32 updates WiFi state]
-    SendDisc --> STM32Process
+    PublishSingle --> LogSingleSensor[Log Single Sensor Values]
+    PublishPeriodic --> LogPeriodicSensor[Log Periodic Sensor Values]
     
-    STM32Process --> UpdateDisplay[Display shows relay state]
-    UpdateDisplay --> WebSync[Web interface syncs state]
-    WebSync --> Done([Done])
+    LogSingleError --> Done
+    LogPeriodicError --> Done
+    LogSingleSensor --> Done
+    LogPeriodicSensor --> Done
     
     style Start fill:#90EE90
-    style Source fill:#FFD700
-    style CheckOff fill:#FFD700
-    style CheckMQTT fill:#FFD700
-    style PublishState fill:#87CEEB
+    style ValidateJSON fill:#FFD700
+    style CallSingleCallback fill:#87CEEB
+    style CallPeriodicCallback fill:#87CEEB
+    style Done fill:#98FB98
 ```
 
-## Button Control Flow (ESP32 Buttons)
+## Relay Control Flow
 
 ```mermaid
 flowchart TD
-    Start([Button Event]) --> Debounce[Software debounce 200ms]
-    Debounce --> Identify{Which Button?}
+    Start([Relay Control]) --> InitRelay[Initialize Relay GPIO<br/>(GPIO_4)]
+    InitRelay --> ConfigOutput[Configure as OUTPUT]
+    ConfigOutput --> ReadInitState[Read Initial Hardware State]
+    ReadInitState --> SetGlobalState[Set g_device_on = hardware_state]
+    SetGlobalState --> RegisterCallback[Register State Change Callback]
+    RegisterCallback --> RelayReady[Relay Control Ready]
     
-    Identify -->|GPIO5| RelayBtn[Relay Toggle Button]
-    Identify -->|GPIO16| SingleBtn[Single Measurement Button]
-    Identify -->|GPIO17| PeriodicBtn[Periodic Toggle Button]
-    Identify -->|GPIO4| IntervalBtn[Interval Adjustment Button]
+    RelayReady --> WaitCommand{Wait for Command}
     
-    RelayBtn --> RelayAction[on_button_relay_pressed]
-    RelayAction --> ToggleRelay[Toggle relay state]
-    ToggleRelay --> RelayFlow[See Relay Control Flow]
-    RelayFlow --> Done([Done])
+    WaitCommand -->|MQTT Command| ProcessMQTTRelay[Process MQTT Relay Command]
+    WaitCommand -->|Button Press| ProcessButtonRelay[Process Button Press]
+    WaitCommand -->|Direct API| ProcessDirectCommand[Process Direct API Call]
     
-    SingleBtn --> CheckDev1{Device ON?}
-    CheckDev1 -->|No| LogIgnore1[Log: Ignored - device OFF]
-    CheckDev1 -->|Yes| SendSingle[Send SINGLE to STM32]
-    LogIgnore1 --> Done
-    SendSingle --> STM32Single[STM32 performs single measurement]
-    STM32Single --> Done
+    ProcessMQTTRelay --> ParseCommand{Parse Command}
+    ParseCommand -->|"ON"| SetRelayOn[Set Relay State: ON]
+    ParseCommand -->|"OFF"| SetRelayOff[Set Relay State: OFF]
+    ParseCommand -->|Invalid| LogInvalidCmd[Log Invalid Command]
     
-    PeriodicBtn --> CheckDev2{Device ON?}
-    CheckDev2 -->|No| LogIgnore2[Log: Ignored - device OFF]
-    CheckDev2 -->|Yes| TogglePeriodic[Toggle g_periodic_active]
-    LogIgnore2 --> Done
+    ProcessButtonRelay --> ToggleRelay[Toggle Current State]
+    ToggleRelay --> CheckCurrentState{Current State?}
+    CheckCurrentState -->|ON| SetRelayOff
+    CheckCurrentState -->|OFF| SetRelayOn
     
-    TogglePeriodic --> CheckState{New State?}
-    CheckState -->|ON| SendPOn[Send PERIODIC ON to STM32]
-    CheckState -->|OFF| SendPOff[Send PERIODIC OFF to STM32]
+    ProcessDirectCommand --> CheckAPICall{API Call Type?}
+    CheckAPICall -->|SetState(true)| SetRelayOn
+    CheckAPICall -->|SetState(false)| SetRelayOff
+    CheckAPICall -->|Toggle()| ToggleRelay
     
-    SendPOn --> UpdatePublish[update_and_publish_state]
-    SendPOff --> UpdatePublish
-    UpdatePublish --> STM32Process[STM32 starts/stops periodic]
-    STM32Process --> Done
+    SetRelayOn --> UpdateGPIO_On[gpio_set_level(GPIO_4, 1)]
+    SetRelayOff --> UpdateGPIO_Off[gpio_set_level(GPIO_4, 0)]
     
-    IntervalBtn --> CheckDev3{Device ON?}
-    CheckDev3 -->|No| LogIgnore3[Log: Ignored - device OFF]
-    CheckDev3 -->|Yes| CycleInterval[Cycle interval: 5s → 10s → 15s → 30s → 60s → 5s]
-    LogIgnore3 --> Done
+    UpdateGPIO_On --> UpdateState_On[Update relay_control.state = true]
+    UpdateGPIO_Off --> UpdateState_Off[Update relay_control.state = false]
     
-    CycleInterval --> BuildCmd[Build SET PERIODIC INTERVAL command]
-    BuildCmd --> SendCmd[Send to STM32]
-    SendCmd --> STM32Update[STM32 updates periodic_interval_ms]
-    STM32Update --> Done
+    UpdateState_On --> CallCallback_On[Call Relay Callback(true)]
+    UpdateState_Off --> CallCallback_Off[Call Relay Callback(false)]
+    
+    CallCallback_On --> UpdateGlobalOn[Update g_device_on = true]
+    CallCallback_Off --> UpdateGlobalOff[Update g_device_on = false]
+    
+    UpdateGlobalOn --> CheckPeriodicForceOff{Relay turning OFF?}
+    UpdateGlobalOff --> ForcePeriodicOff[Force g_periodic_active = false]
+    
+    CheckPeriodicForceOff -->|No| PublishState[Publish System State]
+    ForcePeriodicOff --> PublishState
+    
+    PublishState --> DelaySTM32[Wait 500ms<br/>(STM32 Boot Time)]
+    DelaySTM32 --> SendMQTTStatus[Send MQTT Status to STM32]
+    SendMQTTStatus --> LogStateChange[Log Relay State Change]
+    
+    LogInvalidCmd --> WaitCommand
+    LogStateChange --> WaitCommand
     
     style Start fill:#90EE90
-    style Identify fill:#FFD700
-    style CheckDev1 fill:#FFD700
-    style CheckDev2 fill:#FFD700
-    style CheckDev3 fill:#FFD700
+    style RelayReady fill:#87CEEB
+    style SetRelayOn fill:#98FB98
+    style SetRelayOff fill:#FFA07A
+    style ForcePeriodicOff fill:#FFD700
 ```
 
-## SD Card Buffering and Transmission Flow
+## Button Handler Flow
 
 ```mermaid
 flowchart TD
-    Start([Data Ready to Send]) --> CheckMQTT{MQTT Connected?}
+    Start([Button Press Detected]) --> DebounceHW[Hardware Debounce<br/>(RC Circuit)]
+    DebounceHW --> ISR[GPIO ISR Triggered]
+    ISR --> DisableINT[Temporarily Disable Interrupt]
+    DisableINT --> QueueNotify[Notify Button Task via Queue]
+    QueueNotify --> SWDebounce[Software Debounce<br/>(Wait 50ms)]
     
-    CheckMQTT -->|No| BufferDecision[STM32 decides to buffer]
-    CheckMQTT -->|Yes| SendLive[STM32 sends live to ESP32]
+    SWDebounce --> ReadLevel[Read GPIO Level]
+    ReadLevel --> CheckPressed{Level LOW<br/>(Pressed)?}
+    CheckPressed -->|No| ReEnableINT[Re-enable Interrupt]
+    CheckPressed -->|Yes| WaitRelease[Wait for Button Release]
     
-    BufferDecision --> FormatJSON[Format JSON with timestamp]
-    FormatJSON --> WriteSD[SDCardManager_WriteData]
-    WriteSD --> CheckSpace{Buffer Space?}
+    WaitRelease --> PollLevel[Poll GPIO Level]
+    PollLevel --> CheckReleased{Level HIGH<br/>(Released)?}
+    CheckReleased -->|No| PollLevel
+    CheckReleased -->|Yes| IdentifyButton[Identify Button GPIO]
     
-    CheckSpace -->|Full| CircularOverwrite[Overwrite oldest record]
-    CheckSpace -->|Available| WriteNew[Write new record]
+    IdentifyButton --> CheckGPIO{Which GPIO?}
     
-    CircularOverwrite --> UpdatePointers[Update read/write pointers]
-    WriteNew --> UpdatePointers
-    UpdatePointers --> DisplayCount[Display: Buffered count]
-    DisplayCount --> WaitReconnect[Wait for MQTT reconnection]
+    CheckGPIO -->|GPIO_5| RelayButton[Relay Toggle Button]
+    CheckGPIO -->|GPIO_17| SingleButton[Single Read Button]
+    CheckGPIO -->|GPIO_16| PeriodicButton[Periodic Toggle Button]
+    CheckGPIO -->|GPIO_4| IntervalButton[Interval Cycle Button]
     
-    WaitReconnect --> MQTTRestored{MQTT Reconnected?}
-    MQTTRestored -->|No| WaitReconnect
-    MQTTRestored -->|Yes| NotifySTM32[ESP32 sends MQTT CONNECTED]
+    RelayButton --> CallRelayCallback[Call Relay Button Callback]
+    SingleButton --> CheckDeviceOn1{Device ON?}
+    PeriodicButton --> CheckDeviceOn2{Device ON?}
+    IntervalButton --> CheckDeviceOn3{Device ON?}
     
-    NotifySTM32 --> STM32Checks{Has buffered data?}
-    STM32Checks -->|No| NormalOp[Resume normal operation]
-    STM32Checks -->|Yes| ReadSD[SDCardManager_ReadData]
+    CallRelayCallback --> ToggleRelayState[Toggle Relay Hardware State]
+    ToggleRelayState --> UpdateDeviceState[Update g_device_on]
+    UpdateDeviceState --> CheckRelayOff{Relay turned OFF?}
+    CheckRelayOff -->|Yes| ForcePeriodicOff[Force g_periodic_active = false]
+    CheckRelayOff -->|No| PublishRelayState[Publish State Update]
+    ForcePeriodicOff --> PublishRelayState
     
-    ReadSD --> ValidRecord{Valid record?}
-    ValidRecord -->|No| RemoveCorrupt[Remove corrupted record]
-    ValidRecord -->|Yes| TransmitBuffer[Transmit buffered JSON]
+    CheckDeviceOn1 -->|No| LogIgnored1[Log "Single ignored - device OFF"]
+    CheckDeviceOn1 -->|Yes| SendSingle[Send "SINGLE" to STM32]
     
-    RemoveCorrupt --> CheckMore
-    TransmitBuffer --> ESP32Forward[ESP32 forwards to MQTT]
-    ESP32Forward --> RemoveRecord[SDCardManager_RemoveRecord]
-    RemoveRecord --> CheckMore{More records?}
+    CheckDeviceOn2 -->|No| LogIgnored2[Log "Periodic ignored - device OFF"]
+    CheckDeviceOn2 -->|Yes| TogglePeriodic[Toggle g_periodic_active]
     
-    CheckMore -->|Yes| RateLimit[Delay 100ms rate limiting]
-    CheckMore -->|No| ClearBuffer[All buffered data sent]
+    CheckDeviceOn3 -->|No| LogIgnored3[Log "Interval ignored - device OFF"]
+    CheckDeviceOn3 -->|Yes| CycleInterval[Cycle g_interval_index]
     
-    RateLimit --> ReadSD
-    ClearBuffer --> UpdateDisplay[Display: Buffer empty]
-    UpdateDisplay --> NormalOp
+    SendSingle --> LogSingleCmd[Log Single Command Sent]
     
-    SendLive --> ESP32Parse[ESP32 parses JSON]
-    ESP32Parse --> PublishMQTT[Publish to MQTT broker]
-    PublishMQTT --> WebReceive[Web receives real-time data]
-    WebReceive --> NormalOp
+    TogglePeriodic --> FormatPeriodicCmd{New Periodic State?}
+    FormatPeriodicCmd -->|true| SendPeriodicOn[Send "PERIODIC ON" to STM32]
+    FormatPeriodicCmd -->|false| SendPeriodicOff[Send "PERIODIC OFF" to STM32]
     
-    NormalOp --> Done([Done])
+    CycleInterval --> BuildIntervalCmd[Build "SET PERIODIC INTERVAL {ms}"]
+    BuildIntervalCmd --> SendInterval[Send Interval Command to STM32]
+    
+    SendPeriodicOn --> PublishPeriodicState[Publish State Update]
+    SendPeriodicOff --> PublishPeriodicState
+    SendInterval --> LogIntervalCmd[Log Interval Command Sent]
+    
+    PublishRelayState --> ButtonComplete[Button Processing Complete]
+    LogSingleCmd --> ButtonComplete
+    PublishPeriodicState --> ButtonComplete
+    LogIntervalCmd --> ButtonComplete
+    LogIgnored1 --> ButtonComplete
+    LogIgnored2 --> ButtonComplete
+    LogIgnored3 --> ButtonComplete
+    
+    ButtonComplete --> ReEnableINT
+    ReEnableINT --> WaitNextPress[Wait for Next Button Press]
+    WaitNextPress --> Start
     
     style Start fill:#90EE90
-    style CheckMQTT fill:#FFD700
-    style CheckSpace fill:#FFD700
-    style MQTTRestored fill:#FFD700
-    style BufferDecision fill:#FF6B6B
-    style WriteSD fill:#FF6B6B
+    style CheckGPIO fill:#FFD700
+    style CheckDeviceOn1 fill:#FFD700
+    style CheckDeviceOn2 fill:#FFD700
+    style CheckDeviceOn3 fill:#FFD700
+    style ButtonComplete fill:#98FB98
+```
+
+## System State Management Flow
+
+```mermaid
+flowchart TD
+    Start([State Change Event]) --> CheckSource{State Change Source?}
+    
+    CheckSource -->|Relay State Change| RelayStateChange[Handle Relay State Change]
+    CheckSource -->|MQTT Command| MQTTStateChange[Handle MQTT Command State]
+    CheckSource -->|Button Press| ButtonStateChange[Handle Button State Change]
+    CheckSource -->|System Init| InitStateChange[Handle Initialization State]
+    
+    RelayStateChange --> UpdateDeviceState[Update g_device_on]
+    MQTTStateChange --> UpdatePeriodicState[Update g_periodic_active]
+    ButtonStateChange --> UpdateBothStates[Update Both States]
+    InitStateChange --> SetInitialStates[Set Initial State Values]
+    
+    UpdateDeviceState --> CheckDeviceChanged{g_device_on<br/>Changed?}
+    UpdatePeriodicState --> CheckPeriodicChanged{g_periodic_active<br/>Changed?}
+    UpdateBothStates --> CheckDeviceChanged
+    SetInitialStates --> StateReady[State Manager Ready]
+    
+    CheckDeviceChanged -->|Yes| MarkDeviceChanged[Mark device_changed = true]
+    CheckDeviceChanged -->|No| CheckPeriodicChanged
+    
+    MarkDeviceChanged --> LogDeviceChange[Log Device State Change]
+    LogDeviceChange --> CheckPeriodicChanged
+    
+    CheckPeriodicChanged -->|Yes| MarkPeriodicChanged[Mark periodic_changed = true]
+    CheckPeriodicChanged -->|No| CheckAnyChanged{Any State<br/>Changed?}
+    
+    MarkPeriodicChanged --> LogPeriodicChange[Log Periodic State Change]
+    LogPeriodicChange --> CheckAnyChanged
+    
+    CheckAnyChanged -->|No| StateComplete[State Update Complete]
+    CheckAnyChanged -->|Yes| CheckMQTTConnected{MQTT<br/>Connected?}
+    
+    CheckMQTTConnected -->|No| StateComplete
+    CheckMQTTConnected -->|Yes| FormatStateJSON[Format State JSON Message]
+    
+    FormatStateJSON --> CreateMessage[Create JSON:<br/>{"device": bool, "periodic": bool, "timestamp": int}]
+    CreateMessage --> PublishMQTT[Publish to MQTT:<br/>datalogger/esp32/system/state<br/>(retain = true)]
+    PublishMQTT --> LogStatePublished[Log State Published]
+    LogStatePublished --> StateComplete
+    
+    StateReady --> MonitorStates[Monitor State Changes]
+    MonitorStates --> Start
+    
+    StateComplete --> MonitorStates
+    
+    style Start fill:#90EE90
+    style CheckSource fill:#FFD700
+    style CheckMQTTConnected fill:#FFD700
+    style StateComplete fill:#98FB98
+    style StateReady fill:#87CEEB
 ```
 
 ## Error Handling and Recovery Flow
 
 ```mermaid
 flowchart TD
-    Start([Error Detected]) --> ErrorType{Error Type?}
+    Start([Error Detected]) --> ClassifyError{Error Type?}
     
-    ErrorType -->|I2C Sensor Error| SensorError[SHT3X I2C timeout/NACK]
-    ErrorType -->|RTC Error| RTCError[DS3231 I2C timeout/NACK]
-    ErrorType -->|SD Card Error| SDError[SD Card mount/write failure]
-    ErrorType -->|WiFi Error| WiFiError[WiFi connection failed]
-    ErrorType -->|MQTT Error| MQTTError[MQTT broker connection failed]
+    ClassifyError -->|WiFi Connection| WiFiError[WiFi Connection Error]
+    ClassifyError -->|MQTT Connection| MQTTError[MQTT Connection Error]
+    ClassifyError -->|UART Communication| UARTError[UART Communication Error]
+    ClassifyError -->|JSON Parsing| JSONError[JSON Parsing Error]
+    ClassifyError -->|Component Init| ComponentError[Component Initialization Error]
+    ClassifyError -->|Memory Allocation| MemoryError[Memory Allocation Error]
     
-    SensorError --> SetZero[Set temp=0.0, hum=0.0]
-    SetZero --> ContinueOp1[Continue operation with error values]
-    ContinueOp1 --> LogSensor[Log sensor failure to display]
-    LogSensor --> RetryNext1[Retry on next measurement cycle]
-    RetryNext1 --> Monitor1[Monitor for recovery]
-    Monitor1 --> Done([System Continues])
+    WiFiError --> LogWiFiError[Log WiFi Error Details]
+    LogWiFiError --> CheckWiFiRetries{Retry Count<br/>< Max (5)?}
+    CheckWiFiRetries -->|Yes| WaitWiFiRetry[Wait 2s for Retry]
+    CheckWiFiRetries -->|No| WiFiGiveUp[Set WiFi State: FAILED]
+    WaitWiFiRetry --> RetryWiFi[Retry WiFi Connection]
+    RetryWiFi --> MonitorWiFi[Continue Monitoring]
+    WiFiGiveUp --> ScheduleManualRetry[Schedule Manual Retry (5s)]
     
-    RTCError --> UseZero[Use timestamp=0]
-    UseZero --> ContinueOp2[Continue operation with zero timestamp]
-    ContinueOp2 --> LogRTC[Log RTC failure to display]
-    LogRTC --> RetryNext2[Retry on next time query]
-    RetryNext2 --> Monitor2[Monitor for recovery]
-    Monitor2 --> Done
+    MQTTError --> LogMQTTError[Log MQTT Error Details]
+    LogMQTTError --> CheckMQTTRetries{Retry Count<br/>< Max?}
+    CheckMQTTRetries -->|Yes| CalcMQTTBackoff[Calculate Exponential Backoff]
+    CheckMQTTRetries -->|No| MQTTGiveUp[Stop MQTT Retries]
+    CalcMQTTBackoff --> WaitMQTTRetry[Wait Backoff Period]
+    WaitMQTTRetry --> RetryMQTT[Retry MQTT Connection]
+    RetryMQTT --> MonitorMQTT[Continue Monitoring]
+    MQTTGiveUp --> WaitWiFiReconnect[Wait for WiFi Reconnect]
     
-    SDError --> CheckInit{Initialization error?}
-    CheckInit -->|Yes| DisableSD[Disable SD buffering]
-    CheckInit -->|No| RetryWrite[Retry write operation]
+    UARTError --> LogUARTError[Log UART Error Details]
+    LogUARTError --> CheckUARTBuffer{Buffer<br/>Overflow?}
+    CheckUARTBuffer -->|Yes| ClearUARTBuffer[Clear Ring Buffer]
+    CheckUARTBuffer -->|No| CheckUARTInit{UART Driver<br/>OK?}
+    ClearUARTBuffer --> ResumeUART[Resume UART Operation]
+    CheckUARTInit -->|No| ReinitUART[Reinitialize UART Driver]
+    CheckUARTInit -->|Yes| ResumeUART
+    ReinitUART --> ResumeUART
     
-    DisableSD --> LogSD[Log SD disabled to display]
-    LogSD --> MQTTOnly[Rely on MQTT only]
-    MQTTOnly --> Done
+    JSONError --> LogJSONError[Log JSON Parse Error]
+    LogJSONError --> DiscardJSONData[Discard Invalid JSON Data]
+    DiscardJSONData --> ContinueJSONParsing[Continue JSON Processing]
     
-    RetryWrite --> CheckSuccess{Write successful?}
-    CheckSuccess -->|Yes| RecoverSD[SD recovered]
-    CheckSuccess -->|No| DisableSD
-    RecoverSD --> Done
+    ComponentError --> LogComponentError[Log Component Error]
+    LogComponentError --> CheckCritical{Critical<br/>Component?}
+    CheckCritical -->|Yes| SystemRestart[ESP32 System Restart]
+    CheckCritical -->|No| DisableComponent[Disable Component]
+    DisableComponent --> ContinueWithoutComponent[Continue Without Component]
     
-    WiFiError --> CheckRetry{Retry count?}
-    CheckRetry -->|< 5| WaitWiFi[Wait 2s]
-    CheckRetry -->|>= 5| ManualRetry[Wait 5s for manual retry]
+    MemoryError --> LogMemoryError[Log Memory Error]
+    LogMemoryError --> FreeUnusedMemory[Free Unused Memory]
+    FreeUnusedMemory --> CheckMemoryRecovered{Memory<br/>Recovered?}
+    CheckMemoryRecovered -->|Yes| ContinueOperation[Continue Operation]
+    CheckMemoryRecovered -->|No| SystemRestart
     
-    WaitWiFi --> RetryConnect[WiFi_Connect]
-    ManualRetry --> RetryConnect
-    RetryConnect --> CheckWiFiOK{Connected?}
+    MonitorWiFi --> RecoveryComplete[Recovery Complete]
+    MonitorMQTT --> RecoveryComplete
+    ScheduleManualRetry --> RecoveryComplete
+    WaitWiFiReconnect --> RecoveryComplete
+    ResumeUART --> RecoveryComplete
+    ContinueJSONParsing --> RecoveryComplete
+    ContinueWithoutComponent --> RecoveryComplete
+    ContinueOperation --> RecoveryComplete
     
-    CheckWiFiOK -->|Yes| WiFiRecovered[WiFi recovered]
-    CheckWiFiOK -->|No| CheckRetry
+    SystemRestart --> RestartESP[esp_restart()]
+    RestartESP --> Start
     
-    WiFiRecovered --> WaitStable[Wait 4s stability]
-    WaitStable --> StartMQTT[Start MQTT]
-    StartMQTT --> Done
-    
-    MQTTError --> IncRetry[Increment retry_count]
-    IncRetry --> CalcBackoff[Calculate backoff: min 60s, 2^retry]
-    CalcBackoff --> WaitBackoff[Wait backoff delay]
-    WaitBackoff --> RetryMQTT[MQTT_Handler_Start]
-    RetryMQTT --> CheckMQTTOK{Connected?}
-    
-    CheckMQTTOK -->|Yes| MQTTRecovered[MQTT recovered]
-    CheckMQTTOK -->|No| CheckMaxRetry{Max retries?}
-    
-    CheckMaxRetry -->|No| IncRetry
-    CheckMaxRetry -->|Yes| ResetCount[Reset retry_count]
-    ResetCount --> Wait60[Wait 60s]
-    Wait60 --> RetryMQTT
-    
-    MQTTRecovered --> NotifySTM32[Send MQTT CONNECTED to STM32]
-    NotifySTM32 --> TransmitBuffer[Transmit buffered SD data]
-    TransmitBuffer --> Done
-    
-    style Start fill:#90EE90
-    style ErrorType fill:#FFD700
-    style CheckRetry fill:#FFD700
-    style SetZero fill:#FF6B6B
-    style DisableSD fill:#FF6B6B
-```
-
-## System State Synchronization Flow
-
-```mermaid
-flowchart TD
-    Start([State Change Event]) --> StateType{State Type?}
-    
-    StateType -->|Device State| DeviceChange[g_device_on changed]
-    StateType -->|Periodic State| PeriodicChange[g_periodic_active changed]
-    StateType -->|MQTT State| MQTTChange[mqtt_current_state changed]
-    
-    DeviceChange --> CheckDevice{New Value?}
-    CheckDevice -->|ON| DeviceOn[Device turned ON]
-    CheckDevice -->|OFF| DeviceOff[Device turned OFF]
-    
-    DeviceOn --> UpdateESP32_1[ESP32 updates state]
-    DeviceOff --> ForcePeriodic[Force periodic OFF]
-    ForcePeriodic --> SendPOff[Send PERIODIC OFF to STM32]
-    SendPOff --> UpdateESP32_2[ESP32 updates state]
-    
-    UpdateESP32_1 --> PublishDevice
-    UpdateESP32_2 --> PublishDevice[Create state JSON]
-    
-    PeriodicChange --> CheckPeriodic{New Value?}
-    CheckPeriodic -->|ON| PeriodicOn[Periodic mode started]
-    CheckPeriodic -->|OFF| PeriodicOff[Periodic mode stopped]
-    
-    PeriodicOn --> SendPOn[Send PERIODIC ON to STM32]
-    PeriodicOff --> SendPOffCmd[Send PERIODIC OFF to STM32]
-    
-    SendPOn --> UpdateESP32_3[ESP32 updates state]
-    SendPOffCmd --> UpdateESP32_4[ESP32 updates state]
-    
-    UpdateESP32_3 --> PublishPeriodic
-    UpdateESP32_4 --> PublishPeriodic[Create state JSON]
-    
-    PublishDevice --> CheckMQTT
-    PublishPeriodic --> CheckMQTT{MQTT Connected?}
-    
-    CheckMQTT -->|Yes| FormatJSON[JSON_Utils_CreateSystemState]
-    CheckMQTT -->|No| LogOnly[Log state change only]
-    
-    FormatJSON --> PublishRetain[MQTT Publish with retain=1<br/>datalogger/esp32/system/state]
-    PublishRetain --> BrokerStore[Broker stores retained message]
-    BrokerStore --> WebUpdate[Web receives state update]
-    WebUpdate --> UpdateUI[Web UI updates display]
-    UpdateUI --> SyncComplete
-    
-    LogOnly --> SyncComplete[State logged locally]
-    
-    MQTTChange --> CheckMQTTState{New State?}
-    CheckMQTTState -->|CONNECTED| MQTTConnected[MQTT connection established]
-    CheckMQTTState -->|DISCONNECTED| MQTTDisconnected[MQTT connection lost]
-    
-    MQTTConnected --> NotifyConn[Send MQTT CONNECTED to STM32]
-    MQTTDisconnected --> NotifyDisc[Send MQTT DISCONNECTED to STM32]
-    
-    NotifyConn --> STM32Switch1[STM32 switches to live transmission]
-    NotifyDisc --> STM32Switch2[STM32 switches to SD buffering]
-    
-    STM32Switch1 --> CheckBuffer{Has buffered data?}
-    CheckBuffer -->|Yes| TransmitBuffer[Transmit SD buffer]
-    CheckBuffer -->|No| SyncComplete
-    
-    TransmitBuffer --> SyncComplete
-    STM32Switch2 --> SyncComplete
-    
-    SyncComplete --> Done([Done])
+    RecoveryComplete --> NormalOperation[Return to Normal Operation]
+    NormalOperation --> MonitorForErrors[Monitor for New Errors]
+    MonitorForErrors --> Start
     
     style Start fill:#90EE90
-    style StateType fill:#FFD700
-    style CheckMQTT fill:#FFD700
-    style PublishRetain fill:#87CEEB
-```
-
-## Legend
-
-```mermaid
-flowchart LR
-    Start([Start/End Point])
-    Decision{Decision Point}
-    Process[Process/Action]
-    Critical[Critical State]
-    External[External System]
-    
-    style Start fill:#90EE90
-    style Decision fill:#FFD700
-    style Critical fill:#FF6B6B
-    style External fill:#87CEEB
+    style ClassifyError fill:#FFD700
+    style SystemRestart fill:#FF6B6B
+    style RecoveryComplete fill:#98FB98
+    style RestartESP fill:#FF4500
 ```
 
 ---
 
-## Key System Features
+## Legend
 
-### Communication Protocol
-- **UART**: 115200 baud, 8N1, line-based JSON protocol
-- **I2C**: 100kHz for sensors (SHT3X 0x44, DS3231 0x68)
-- **SPI**: 18MHz for SD Card, 36MHz for Display
-- **MQTT**: v5.0, QoS 0/1, retained state messages
+- **Green Nodes**: Start/End points and successful states
+- **Yellow Nodes**: Decision points and conditional logic
+- **Red Nodes**: Error conditions and critical states
+- **Blue Nodes**: Stable operational states
+- **Orange Nodes**: Recovery and retry mechanisms
 
-### Timing Requirements
-- **WiFi Stabilization**: 4-second delay before MQTT start
-- **STM32 Boot Delay**: 500ms after relay toggle
-- **Button Debounce**: 200ms software filter
-- **Periodic Intervals**: 5s, 10s, 15s, 30s, 60s (user selectable)
-- **SD Transmission Rate**: 100ms between records
+## Notes
 
-### State Management
-- **Device State**: g_device_on (relay control)
-- **Periodic State**: g_periodic_active (measurement mode)
-- **MQTT State**: mqtt_current_state (connection status)
-- **State Sync**: MQTT retained messages for web synchronization
-
-### Error Recovery
-- **WiFi**: 5 auto-retries @ 2s, then manual retry @ 5s
-- **MQTT**: Exponential backoff min(60s, 2^retry)
-- **Sensor**: Return 0.0 values, continue operation
-- **RTC**: Return timestamp=0, continue operation
-- **SD Card**: Circular buffer, 204,800 records capacity
-
-### Data Flow Priority
-1. **Real-time**: When MQTT connected, direct transmission
-2. **Buffered**: When MQTT disconnected, SD card storage
-3. **Catch-up**: When MQTT reconnects, transmit buffered data first
-4. **Rate Limited**: 100ms delay between buffered transmissions
+- All flows incorporate FreeRTOS task management and queue-based communication
+- WiFi connection uses automatic retry with 5 attempts and 2-second intervals
+- MQTT implements exponential backoff retry (1s to 60s maximum)
+- UART uses 512-byte ring buffer for reliable data reception
+- Button handling includes both hardware and software debouncing (50ms)
+- Relay state changes include 500ms delay for STM32 boot sequence
+- Network stability requires 4-second delay before MQTT initialization
+- All components support graceful shutdown and reinitialization

@@ -1,6 +1,6 @@
-# ESP32 IoT Bridge - UML Class Diagram
+# ESP32 IoT Bridge - UML Diagrams
 
-This document provides the UML class diagrams showing the structure and relationships of the ESP32 firmware components.
+This document contains all UML diagrams for the ESP32 firmware architecture, including class diagrams, component diagrams, and structural relationships.
 
 ## Complete System Class Diagram
 
@@ -49,570 +49,963 @@ classDiagram
         +WiFi_GetIPInfo(esp_netif_ip_info_t*) bool
         +WiFi_GetRSSI(int8_t*) bool
         +WiFi_GetStateString(wifi_state_t) const char*
-        +WiFi_SetPowerSave(bool) bool
-        +WiFi_Deinit() void
+        +WiFi_SetCredentials(const char*, const char*) bool
+        +WiFi_ClearCredentials() void
+        +WiFi_RegisterEventCallback(wifi_event_callback_t, void*) void
+        +WiFi_UnregisterEventCallback() void
+        +WiFi_StartScan() bool
+        +WiFi_GetScanResults(wifi_ap_record_t*, uint16_t*) bool
+        +WiFi_SetAutoReconnect(bool) void
+        +WiFi_GetAutoReconnect() bool
+    }
+    
+    class STM32_UART {
+        -uart_port_t uart_num
+        -gpio_num_t tx_pin
+        -gpio_num_t rx_pin
+        -int baud_rate
+        -QueueHandle_t uart_queue
+        -TaskHandle_t rx_task_handle
+        -stm32_data_callback_t data_callback
+        -void* callback_arg
+        -ring_buffer_t rx_buffer
+        +STM32_UART_Init(stm32_uart_config_t*) bool
+        +STM32_UART_SendCommand(const char*) int
+        +STM32_UART_SendData(const uint8_t*, size_t) int
+        +STM32_UART_RegisterCallback(stm32_data_callback_t, void*) void
+        +STM32_UART_UnregisterCallback() void
+        +STM32_UART_SetBaudRate(int) bool
+        +STM32_UART_GetBaudRate() int
+        +STM32_UART_FlushRxBuffer() void
+        +STM32_UART_IsConnected() bool
+        +STM32_UART_GetBufferSize() size_t
+        +STM32_UART_Deinit() void
+        -rx_task(void*) void
+        -process_received_data(const uint8_t*, size_t) void
+        -validate_json_message(const char*) bool
+    }
+    
+    class MQTTHandler {
+        -esp_mqtt_client_handle_t mqtt_client
+        -mqtt_state_t current_state
+        -mqtt_config_t config
+        -mqtt_data_callback_t data_callback
+        -void* callback_arg
+        -TaskHandle_t publish_task_handle
+        -QueueHandle_t publish_queue
+        -char client_id[32]
+        +MQTT_Init(mqtt_config_t*) bool
+        +MQTT_Connect() bool
+        +MQTT_Disconnect() void
+        +MQTT_Publish(const char*, const char*, int, int) int
+        +MQTT_Subscribe(const char*, int) int
+        +MQTT_Unsubscribe(const char*) int
+        +MQTT_IsConnected() bool
+        +MQTT_GetState() mqtt_state_t
+        +MQTT_SetWillMessage(const char*, const char*) bool
+        +MQTT_RegisterDataCallback(mqtt_data_callback_t, void*) void
+        +MQTT_UnregisterDataCallback() void
+        +MQTT_GetClientId() const char*
+        +MQTT_SetKeepAlive(int) bool
+        +MQTT_SetCleanSession(bool) bool
+        +MQTT_GetLastError() esp_err_t
+        -mqtt_event_handler(void*, esp_event_base_t, int32_t, void*) void
+        -publish_task(void*) void
+        -validate_topic(const char*) bool
+        -generate_client_id() void
+    }
+    
+    class RelayControl {
+        -gpio_num_t relay_pin
+        -bool current_state
+        -bool invert_logic
+        -relay_state_callback_t state_callback
+        -void* callback_arg
+        -uint32_t min_switch_interval_ms
+        -int64_t last_switch_time_us
+        +Relay_Init(relay_config_t*) bool
+        +Relay_SetState(bool) bool
+        +Relay_GetState() bool
+        +Relay_Toggle() bool
+        +Relay_RegisterStateCallback(relay_state_callback_t, void*) void
+        +Relay_UnregisterStateCallback() void
+        +Relay_SetInvertLogic(bool) void
+        +Relay_GetInvertLogic() bool
+        +Relay_SetMinSwitchInterval(uint32_t) void
+        +Relay_GetMinSwitchInterval() uint32_t
+        +Relay_TestOperation() bool
+        +Relay_GetSwitchCount() uint32_t
+        +Relay_ResetSwitchCount() void
+        -validate_switch_timing() bool
+        -update_switch_statistics() void
+    }
+    
+    class JSONSensorParser {
+        -cJSON* json_root
+        -char* json_buffer
+        -size_t buffer_size
+        -parse_error_t last_error
+        +JSON_Parser_Init(size_t) bool
+        +JSON_Parser_ParseSensorData(const char*, sensor_data_t*) bool
+        +JSON_Parser_CreateSensorJSON(const sensor_data_t*, char*, size_t) int
+        +JSON_Parser_ValidateFormat(const char*) bool
+        +JSON_Parser_GetLastError() parse_error_t
+        +JSON_Parser_GetErrorString(parse_error_t) const char*
+        +JSON_Parser_ExtractField(const char*, const char*, char*, size_t) bool
+        +JSON_Parser_SetField(cJSON*, const char*, const char*) bool
+        +JSON_Parser_Cleanup() void
+        +JSON_Parser_GetBufferUsage() float
+        +JSON_Parser_ResetBuffer() void
+        -validate_sensor_fields(cJSON*) bool
+        -convert_to_sensor_data(cJSON*, sensor_data_t*) bool
+        -handle_parse_error(parse_error_t) void
+    }
+    
+    class JSONUtils {
+        +JSON_CreateObject() cJSON*
+        +JSON_CreateArray() cJSON*
+        +JSON_AddStringToObject(cJSON*, const char*, const char*) bool
+        +JSON_AddNumberToObject(cJSON*, const char*, double) bool
+        +JSON_AddBoolToObject(cJSON*, const char*, bool) bool
+        +JSON_GetStringValue(cJSON*, const char*) const char*
+        +JSON_GetNumberValue(cJSON*, const char*) double
+        +JSON_GetBoolValue(cJSON*, const char*) bool
+        +JSON_HasField(cJSON*, const char*) bool
+        +JSON_PrintObject(cJSON*) char*
+        +JSON_ParseString(const char*) cJSON*
+        +JSON_Delete(cJSON*) void
+        +JSON_ValidateSchema(cJSON*, const char*) bool
+        +JSON_GetArraySize(cJSON*) int
+        +JSON_GetArrayItem(cJSON*, int) cJSON*
+        +JSON_CompareObjects(cJSON*, cJSON*) bool
+    }
+    
+    class ButtonHandler {
+        -gpio_num_t relay_button_pin
+        -gpio_num_t single_button_pin
+        -gpio_num_t periodic_button_pin
+        -gpio_num_t interval_button_pin
+        -button_callback_t relay_callback
+        -button_callback_t single_callback
+        -button_callback_t periodic_callback
+        -button_callback_t interval_callback
+        -void* callback_args[4]
+        -uint32_t debounce_time_ms
+        -int64_t last_press_time_us[4]
+        +Button_Init(button_config_t*) bool
+        +Button_RegisterRelayCallback(button_callback_t, void*) void
+        +Button_RegisterSingleCallback(button_callback_t, void*) void
+        +Button_RegisterPeriodicCallback(button_callback_t, void*) void
+        +Button_RegisterIntervalCallback(button_callback_t, void*) void
+        +Button_UnregisterCallback(gpio_num_t) void
+        +Button_SetDebounceTime(uint32_t) void
+        +Button_GetDebounceTime() uint32_t
+        +Button_IsPressed(gpio_num_t) bool
+        +Button_GetPressCount(gpio_num_t) uint32_t
+        +Button_ResetPressCount(gpio_num_t) void
+        +Button_EnableInterrupt(gpio_num_t) bool
+        +Button_DisableInterrupt(gpio_num_t) bool
+        -button_isr_handler(void*) void
+        -validate_button_press(gpio_num_t) bool
+        -execute_button_callback(gpio_num_t) void
+    }
+    
+    class RingBuffer {
+        -uint8_t* buffer
+        -size_t capacity
+        -size_t head
+        -size_t tail
+        -size_t count
+        -SemaphoreHandle_t mutex
+        +RingBuffer_Create(size_t) ring_buffer_t*
+        +RingBuffer_Delete(ring_buffer_t*) void
+        +RingBuffer_Write(ring_buffer_t*, const uint8_t*, size_t) size_t
+        +RingBuffer_Read(ring_buffer_t*, uint8_t*, size_t) size_t
+        +RingBuffer_Peek(ring_buffer_t*, uint8_t*, size_t) size_t
+        +RingBuffer_GetFreeSpace(ring_buffer_t*) size_t
+        +RingBuffer_GetDataSize(ring_buffer_t*) size_t
+        +RingBuffer_IsFull(ring_buffer_t*) bool
+        +RingBuffer_IsEmpty(ring_buffer_t*) bool
+        +RingBuffer_Clear(ring_buffer_t*) void
+        +RingBuffer_GetCapacity(ring_buffer_t*) size_t
+        +RingBuffer_GetUsagePercent(ring_buffer_t*) float
+        -ring_buffer_advance_head(ring_buffer_t*, size_t) void
+        -ring_buffer_advance_tail(ring_buffer_t*, size_t) void
+    }
+    
+    class CoAPHandler {
+        -coap_context_t* coap_context
+        -coap_endpoint_t* coap_endpoint
+        -coap_session_t* coap_session
+        -coap_optlist_t* coap_options
+        -coap_uri_t coap_uri
+        -coap_state_t current_state
+        -uint16_t message_id
+        -coap_data_callback_t data_callback
+        -void* callback_arg
+        +CoAP_Init(coap_config_t*) bool
+        +CoAP_Start() bool
+        +CoAP_Stop() void
+        +CoAP_SendMessage(const char*, const char*, coap_method_t) int
+        +CoAP_RegisterDataCallback(coap_data_callback_t, void*) void
+        +CoAP_UnregisterDataCallback() void
+        +CoAP_IsRunning() bool
+        +CoAP_GetState() coap_state_t
+        +CoAP_SetURI(const char*) bool
+        +CoAP_AddOption(uint16_t, const uint8_t*, size_t) bool
+        +CoAP_ClearOptions() void
+        +CoAP_GetLastMessageId() uint16_t
+        -coap_request_handler(coap_context_t*, coap_session_t*, coap_pdu_t*, coap_binary_t*, coap_pdu_t*) void
+        -coap_response_handler(coap_context_t*, coap_session_t*, coap_pdu_t*, coap_pdu_t*, const coap_tid_t) void
+        -coap_event_handler(coap_context_t*, coap_event_t, coap_session_t*) int
+    }
+    
+    %% Data Transfer Objects
+    class sensor_data_t {
+        +float temperature
+        +float humidity
+        +char timestamp[32]
+        +char mode[16]
+        +char status[16]
+        +uint32_t sequence_number
+        +bool is_valid
+        +char error_message[64]
     }
     
     class wifi_manager_config_t {
-        +const char* ssid
-        +const char* password
-        +uint8_t maximum_retry
-        +uint8_t scan_method
-        +uint8_t sort_method
-        +int8_t rssi_threshold
-        +wifi_auth_mode_t auth_mode_threshold
-        +uint16_t listen_interval
-        +bool power_save_enabled
-        +wifi_ps_type_t power_save_mode
-        +bool ipv6_enabled
-        +uint32_t connection_timeout_ms
+        +char ssid[32]
+        +char password[64]
+        +int max_retry_count
+        +bool auto_reconnect
+        +wifi_auth_mode_t auth_mode
         +wifi_event_callback_t event_callback
         +void* callback_arg
     }
     
+    class mqtt_config_t {
+        +char broker_uri[256]
+        +char username[64]
+        +char password[64]
+        +char client_id[32]
+        +int port
+        +int keepalive
+        +bool clean_session
+        +char will_topic[128]
+        +char will_message[256]
+        +int will_qos
+        +bool will_retain
+        +mqtt_data_callback_t data_callback
+        +void* callback_arg
+    }
+    
+    class relay_config_t {
+        +gpio_num_t pin
+        +bool initial_state
+        +bool invert_logic
+        +uint32_t min_switch_interval_ms
+        +relay_state_callback_t state_callback
+        +void* callback_arg
+    }
+    
+    class button_config_t {
+        +gpio_num_t relay_pin
+        +gpio_num_t single_pin
+        +gpio_num_t periodic_pin
+        +gpio_num_t interval_pin
+        +uint32_t debounce_time_ms
+        +gpio_pull_mode_t pull_mode
+        +gpio_int_type_t interrupt_type
+    }
+    
+    class stm32_uart_config_t {
+        +uart_port_t uart_num
+        +gpio_num_t tx_pin
+        +gpio_num_t rx_pin
+        +int baud_rate
+        +uart_word_length_t data_bits
+        +uart_parity_t parity
+        +uart_stop_bits_t stop_bits
+        +uart_hw_flowcontrol_t flow_ctrl
+        +size_t rx_buffer_size
+        +size_t tx_buffer_size
+        +int queue_size
+        +stm32_data_callback_t data_callback
+        +void* callback_arg
+    }
+    
+    class coap_config_t {
+        +char server_uri[256]
+        +uint16_t port
+        +int max_retransmit
+        +uint32_t ack_timeout_ms
+        +coap_data_callback_t data_callback
+        +void* callback_arg
+    }
+    
+    %% Enumerations
     class wifi_state_t {
         <<enumeration>>
         WIFI_STATE_DISCONNECTED
         WIFI_STATE_CONNECTING
         WIFI_STATE_CONNECTED
-        WIFI_STATE_FAILED
+        WIFI_STATE_RECONNECTING
+        WIFI_STATE_ERROR
     }
     
-    class STM32_UART {
-        -int uart_num
-        -int baud_rate
-        -int tx_pin
-        -int rx_pin
-        -ring_buffer_t rx_buffer
-        -stm32_data_callback_t data_callback
-        -bool initialized
-        +STM32_UART_Init(stm32_uart_t*, int, int, int, int, stm32_data_callback_t) bool
-        +STM32_UART_SendCommand(stm32_uart_t*, const char*) bool
-        +STM32_UART_ProcessData(stm32_uart_t*) void
-        +STM32_UART_StartTask(stm32_uart_t*) bool
-        +STM32_UART_Deinit(stm32_uart_t*) void
-    }
-    
-    class RingBuffer {
-        -uint8_t* buffer
-        -size_t size
-        -size_t head
-        -size_t tail
-        -size_t count
-        +RingBuffer_Init(ring_buffer_t*, size_t) bool
-        +RingBuffer_Write(ring_buffer_t*, const uint8_t*, size_t) bool
-        +RingBuffer_Read(ring_buffer_t*, uint8_t*, size_t) size_t
-        +RingBuffer_Available(ring_buffer_t*) size_t
-        +RingBuffer_IsFull(ring_buffer_t*) bool
-        +RingBuffer_IsEmpty(ring_buffer_t*) bool
-        +RingBuffer_Clear(ring_buffer_t*) void
-        +RingBuffer_Free(ring_buffer_t*) void
-    }
-    
-    class MQTT_Handler {
-        -esp_mqtt_client_handle_t client
-        -mqtt_data_callback_t callback
-        -bool connected
-        -int retry_count
-        +MQTT_Handler_Init(mqtt_handler_t*, const char*, const char*, const char*, const char*, mqtt_data_callback_t) bool
-        +MQTT_Handler_Start(mqtt_handler_t*) bool
-        +MQTT_Handler_Stop(mqtt_handler_t*) bool
-        +MQTT_Handler_Subscribe(mqtt_handler_t*, const char*, int) bool
-        +MQTT_Handler_Publish(mqtt_handler_t*, const char*, const char*, int, bool) bool
-        +MQTT_Handler_IsConnected(mqtt_handler_t*) bool
-        +MQTT_Handler_Deinit(mqtt_handler_t*) void
-    }
-    
-    class Relay_Control {
-        -int gpio_num
-        -bool state
-        -bool initialized
-        -relay_state_callback_t state_callback
-        +Relay_Init(relay_control_t*, int, relay_state_callback_t) bool
-        +Relay_SetState(relay_control_t*, bool) bool
-        +Relay_GetState(relay_control_t*) bool
-        +Relay_Toggle(relay_control_t*) bool
-        +Relay_ProcessCommand(relay_control_t*, const char*) bool
-        +Relay_Deinit(relay_control_t*) void
-    }
-    
-    class JSON_Sensor_Parser {
-        -sensor_data_callback_t single_callback
-        -sensor_data_callback_t periodic_callback
-        -sensor_data_callback_t error_callback
-        +JSON_Parser_Init(json_sensor_parser_t*, sensor_data_callback_t, sensor_data_callback_t, sensor_data_callback_t) bool
-        +JSON_Parser_ParseLine(json_sensor_parser_t*, const char*) sensor_data_t
-        +JSON_Parser_ProcessLine(json_sensor_parser_t*, const char*) bool
-        +JSON_Parser_GetMode(const char*) sensor_mode_t
-        +JSON_Parser_GetModeString(sensor_mode_t) const char*
-        +JSON_Parser_IsValid(const sensor_data_t*) bool
-        +JSON_Parser_IsSensorFailed(const sensor_data_t*) bool
-        +JSON_Parser_IsRTCFailed(const sensor_data_t*) bool
-    }
-    
-    class sensor_data_t {
-        +sensor_mode_t mode
-        +uint32_t timestamp
-        +bool valid
-        +bool has_temperature
-        +float temperature
-        +bool has_humidity
-        +float humidity
-    }
-    
-    class sensor_mode_t {
+    class mqtt_state_t {
         <<enumeration>>
-        SENSOR_MODE_UNKNOWN
-        SENSOR_MODE_SINGLE
-        SENSOR_MODE_PERIODIC
+        MQTT_STATE_DISCONNECTED
+        MQTT_STATE_CONNECTING
+        MQTT_STATE_CONNECTED
+        MQTT_STATE_RECONNECTING
+        MQTT_STATE_ERROR
     }
     
-    class JSON_Utils {
-        <<static>>
-        +JSON_Utils_CreateSensorData(char*, size_t, const char*, uint32_t, float, float) int
-        +JSON_Utils_CreateSystemState(char*, size_t, bool, bool, uint64_t) int
-        +JSON_Utils_CreateSimpleMessage(char*, size_t, const char*, const char*) int
-        +JSON_Utils_CreateIntMessage(char*, size_t, const char*, int) int
-        +JSON_Utils_FormatFloat(char*, size_t, float, int) const char*
-        +JSON_Utils_EscapeString(char*, size_t, const char*) int
+    class parse_error_t {
+        <<enumeration>>
+        PARSE_OK
+        PARSE_ERROR_INVALID_JSON
+        PARSE_ERROR_MISSING_FIELD
+        PARSE_ERROR_INVALID_VALUE
+        PARSE_ERROR_BUFFER_OVERFLOW
+        PARSE_ERROR_OUT_OF_MEMORY
     }
     
-    class Button_Handler {
-        -gpio_num_t gpio_num
-        -button_press_callback_t callback
-        -uint32_t last_press_time
-        -bool initialized
-        +Button_Init(gpio_num_t, button_press_callback_t) bool
-        +Button_StartTask() bool
-        +Button_StopTask() void
+    class coap_state_t {
+        <<enumeration>>
+        COAP_STATE_STOPPED
+        COAP_STATE_STARTING
+        COAP_STATE_RUNNING
+        COAP_STATE_ERROR
     }
     
-    %% Relationships
-    main --> WiFiManager : uses
-    main --> STM32_UART : uses
-    main --> MQTT_Handler : uses
-    main --> Relay_Control : uses
-    main --> JSON_Sensor_Parser : uses
-    main --> Button_Handler : uses
-    main --> JSON_Utils : uses
+    class coap_method_t {
+        <<enumeration>>
+        COAP_METHOD_GET
+        COAP_METHOD_POST
+        COAP_METHOD_PUT
+        COAP_METHOD_DELETE
+    }
     
-    WiFiManager --> wifi_manager_config_t : configured by
-    WiFiManager --> wifi_state_t : returns
+    %% Main Composition Relationships
+    main *-- WiFiManager : contains
+    main *-- STM32_UART : contains
+    main *-- MQTTHandler : contains
+    main *-- RelayControl : contains
+    main *-- JSONSensorParser : contains
+    main *-- ButtonHandler : contains
     
-    STM32_UART --> RingBuffer : contains
+    %% Component Internal Dependencies
+    STM32_UART *-- RingBuffer : uses
+    MQTTHandler --> JSONUtils : uses for message formatting
+    JSONSensorParser --> JSONUtils : uses for parsing
+    main --> CoAPHandler : optionally uses
     
-    JSON_Sensor_Parser --> sensor_data_t : produces
-    JSON_Sensor_Parser --> sensor_mode_t : uses
-    JSON_Sensor_Parser ..> JSON_Utils : may use
+    %% Configuration Dependencies
+    WiFiManager ..> wifi_manager_config_t : configures with
+    STM32_UART ..> stm32_uart_config_t : configures with
+    MQTTHandler ..> mqtt_config_t : configures with
+    RelayControl ..> relay_config_t : configures with
+    ButtonHandler ..> button_config_t : configures with
+    CoAPHandler ..> coap_config_t : configures with
     
+    %% Data Flow Dependencies
+    STM32_UART --> sensor_data_t : produces
+    JSONSensorParser --> sensor_data_t : parses to
     main --> sensor_data_t : processes
+    
+    %% State Dependencies
+    WiFiManager ..> wifi_state_t : maintains
+    MQTTHandler ..> mqtt_state_t : maintains
+    JSONSensorParser ..> parse_error_t : reports
+    CoAPHandler ..> coap_state_t : maintains
+    CoAPHandler ..> coap_method_t : uses
+    
+    %% Callback Relationships
+    WiFiManager --> main : wifi_event_callback
+    STM32_UART --> main : stm32_data_callback
+    MQTTHandler --> main : mqtt_data_callback
+    RelayControl --> main : relay_state_callback
+    ButtonHandler --> main : button_callback
+    CoAPHandler --> main : coap_data_callback
 ```
 
-## Component Dependencies
-
-```mermaid
-graph TB
-    Main[main.c]
-    WiFi[WiFi Manager]
-    UART[STM32 UART]
-    MQTT[MQTT Handler]
-    Relay[Relay Control]
-    Parser[JSON Sensor Parser]
-    Utils[JSON Utils]
-    Button[Button Handler]
-    RingBuf[Ring Buffer]
-    
-    Main --> WiFi
-    Main --> UART
-    Main --> MQTT
-    Main --> Relay
-    Main --> Parser
-    Main --> Button
-    Main --> Utils
-    
-    UART --> RingBuf
-    Parser ..> Utils
-    
-    WiFi -.-> Main : wifi_event_callback
-    UART -.-> Main : stm32_data_callback
-    MQTT -.-> Main : mqtt_data_callback
-    Relay -.-> Main : relay_state_callback
-    Parser -.-> Main : sensor_data_callback
-    Button -.-> Main : button_press_callback
-    
-    style Main fill:#90EE90
-    style WiFi fill:#87CEEB
-    style MQTT fill:#87CEEB
-    style Parser fill:#FFD700
-    style Relay fill:#DDA0DD
-```
-
-## Object Lifecycle Diagram
-
-```mermaid
-stateDiagram-v2
-    [*] --> Uninitialized
-    
-    Uninitialized --> Initialized : app_main() calls init functions
-    
-    state Initialized {
-        [*] --> NVS_Ready
-        [*] --> EventLoop_Ready
-        [*] --> NetIf_Ready
-        [*] --> WiFi_Init
-        [*] --> UART_Ready
-        [*] --> Components_Init
-        
-        WiFi_Init --> WiFi_Connecting : WiFi_Connect()
-        WiFi_Connecting --> WiFi_Connected : connection success
-        WiFi_Connecting --> WiFi_Failed : max retries
-        WiFi_Connected --> WiFi_Disconnected : connection lost
-        WiFi_Disconnected --> WiFi_Connecting : retry
-        WiFi_Failed --> WiFi_Connecting : manual retry (5s)
-        
-        Components_Init --> MQTT_Initialized
-        Components_Init --> Relay_Initialized
-        Components_Init --> Parser_Initialized
-        Components_Init --> Buttons_Initialized
-        
-        MQTT_Initialized --> MQTT_Connecting : WiFi stable 4s
-        MQTT_Connecting --> MQTT_Connected : broker connected
-        MQTT_Connecting --> MQTT_Disconnected : connection failed
-        MQTT_Connected --> MQTT_Disconnected : WiFi lost
-        MQTT_Disconnected --> MQTT_Connecting : exponential backoff retry
-        
-        Relay_Initialized --> Relay_OFF
-        Relay_OFF --> Relay_ON : Relay_SetState(true)
-        Relay_ON --> Relay_OFF : Relay_SetState(false)
-    }
-    
-    Initialized --> Running : start_services()
-    
-    state Running {
-        [*] --> MainLoop
-        
-        MainLoop --> MonitorWiFi
-        MonitorWiFi --> CheckMQTT
-        CheckMQTT --> ProcessCallbacks
-        ProcessCallbacks --> MainLoop
-        
-        state ProcessCallbacks {
-            [*] --> WaitEvent
-            WaitEvent --> WiFiEvent : WiFi state change
-            WaitEvent --> MQTTEvent : MQTT message
-            WaitEvent --> UARTEvent : STM32 data
-            WaitEvent --> ButtonEvent : Button press
-            WaitEvent --> RelayEvent : Relay state change
-            
-            WiFiEvent --> [*]
-            MQTTEvent --> [*]
-            UARTEvent --> [*]
-            ButtonEvent --> [*]
-            RelayEvent --> [*]
-        }
-    }
-    
-    Running --> [*] : system shutdown
-```
-
-## Data Flow Diagram
-
-```mermaid
-graph LR
-    subgraph STM32_to_Cloud
-        STM32[STM32 Hardware]
-        UART_RX[UART RX]
-        RingBuf[Ring Buffer]
-        LineExtract[Line Extraction]
-        JSONParse[JSON Parser]
-        SensorCB[Sensor Callback]
-        FormatJSON[JSON Utils]
-        MQTTPub[MQTT Publish]
-        Broker[MQTT Broker]
-        
-        STM32 -->|UART 115200| UART_RX
-        UART_RX --> RingBuf
-        RingBuf --> LineExtract
-        LineExtract --> JSONParse
-        JSONParse -->|mode routing| SensorCB
-        SensorCB --> FormatJSON
-        FormatJSON --> MQTTPub
-        MQTTPub --> Broker
-    end
-    
-    subgraph Cloud_to_STM32
-        Web[Web Interface]
-        Broker2[MQTT Broker]
-        MQTTSub[MQTT Subscribe]
-        TopicRoute[Topic Router]
-        UART_TX[UART TX]
-        STM32_2[STM32 Hardware]
-        
-        Web --> Broker2
-        Broker2 --> MQTTSub
-        MQTTSub --> TopicRoute
-        TopicRoute -->|command| UART_TX
-        UART_TX -->|UART 115200| STM32_2
-    end
-    
-    subgraph Relay_Control
-        WebRelay[Web / Button]
-        MQTTCtrl[MQTT Control]
-        RelayHW[Relay Hardware]
-        StateUpdate[State Update]
-        StatePub[State Publish]
-        BrokerState[MQTT Broker]
-        
-        WebRelay --> MQTTCtrl
-        MQTTCtrl --> RelayHW
-        RelayHW --> StateUpdate
-        StateUpdate --> StatePub
-        StatePub --> BrokerState
-    end
-    
-    style STM32 fill:#90EE90
-    style Broker fill:#87CEEB
-    style Web fill:#FFD700
-    style RelayHW fill:#DDA0DD
-```
-
-## MQTT Topic Architecture
-
-```mermaid
-graph TB
-    subgraph MQTT_Broker[MQTT Broker: 192.168.1.39:1883]
-        subgraph Subscribe[ESP32 Subscribes To]
-            T1[datalogger/stm32/command]
-            T2[datalogger/esp32/relay/control]
-            T3[datalogger/esp32/system/state]
-        end
-        
-        subgraph Publish[ESP32 Publishes To]
-            T4[datalogger/stm32/single/data]
-            T5[datalogger/stm32/periodic/data]
-            T6[datalogger/esp32/system/state]
-        end
-    end
-    
-    Web[Web Interface] -->|commands| T1
-    Web -->|relay ON/OFF| T2
-    Web -->|state sync request| T3
-    
-    T1 -->|forward to STM32| ESP32_1[ESP32]
-    T2 -->|process relay command| ESP32_2[ESP32]
-    T3 -->|respond with state| ESP32_3[ESP32]
-    
-    ESP32_4[ESP32] -->|sensor data| T4
-    ESP32_5[ESP32] -->|sensor data| T5
-    ESP32_6[ESP32] -->|state changes| T6
-    
-    T4 --> Web2[Web Interface]
-    T5 --> Web2
-    T6 --> Web2
-    
-    style MQTT_Broker fill:#87CEEB
-    style Web fill:#FFD700
-    style ESP32_1 fill:#90EE90
-    style ESP32_2 fill:#90EE90
-    style ESP32_3 fill:#90EE90
-    style ESP32_4 fill:#90EE90
-    style ESP32_5 fill:#90EE90
-    style ESP32_6 fill:#90EE90
-```
-
-## Hardware GPIO Configuration
-
-```mermaid
-graph LR
-    subgraph ESP32_WROOM_32
-        subgraph UART1[UART1 - STM32 Communication]
-            TX[GPIO17 - TX]
-            RX[GPIO16 - RX]
-        end
-        
-        subgraph Relay_GPIO[Relay Control]
-            R[GPIO4 - Relay]
-        end
-        
-        subgraph Button_GPIO[Button Inputs]
-            B1[GPIO5 - Relay Toggle]
-            B2[GPIO16 - Single Measure]
-            B3[GPIO17 - Periodic Toggle]
-            B4[GPIO4 - Interval Adjust]
-        end
-    end
-    
-    TX -->|115200 baud| STM32_RX[STM32 RX]
-    RX -->|115200 baud| STM32_TX[STM32 TX]
-    
-    R --> RelayModule[Relay Module]
-    
-    B1 -.->|pull-up, active low| GND1[GND]
-    B2 -.->|pull-up, active low| GND2[GND]
-    B3 -.->|pull-up, active low| GND3[GND]
-    B4 -.->|pull-up, active low| GND4[GND]
-    
-    style ESP32_WROOM_32 fill:#90EE90
-    style UART1 fill:#87CEEB
-    style Relay_GPIO fill:#DDA0DD
-    style Button_GPIO fill:#FFD700
-```
-
-## Configuration Constants
+## Component Interface UML Diagram
 
 ```mermaid
 classDiagram
-    class WiFi_Config {
-        +SSID: "Redmi Note 9 Pro"
-        +Password: "12345678"
-        +Max_Retry: 5
-        +Connection_Timeout: 10000ms
-        +Retry_Interval: 2000ms
-        +Manual_Retry_Interval: 5000ms
+    %% Core Interfaces
+    class ICommunicationInterface {
+        <<interface>>
+        +init(config) bool
+        +connect() bool
+        +disconnect() void
+        +send(data, size) int
+        +receive(buffer, size) int
+        +isConnected() bool
+        +getState() connection_state_t
+        +registerCallback(callback, arg) void
     }
     
-    class MQTT_Config {
-        +Broker_URI: "mqtt://192.168.1.39:1883"
-        +Client_ID: "esp32_client"
-        +Username: "admin"
-        +Password: "password"
-        +Protocol_Version: MQTT v5.0
-        +Keepalive: 60s
-        +Reconnect_Backoff: min(60s, 2^retry)
+    class IDataProcessor {
+        <<interface>>
+        +processData(input, output) bool
+        +validateData(data) bool
+        +formatData(data, format, buffer, size) int
+        +parseData(buffer, data) bool
+        +getLastError() error_code_t
     }
     
-    class UART_Config {
-        +Port: UART_NUM_1
-        +Baud_Rate: 115200
-        +TX_Pin: GPIO_NUM_17
-        +RX_Pin: GPIO_NUM_16
-        +RX_Buffer_Size: 1024
-        +Line_Max_Length: 128
+    class IHardwareControl {
+        <<interface>>
+        +initialize(config) bool
+        +setState(state) bool
+        +getState() state_t
+        +reset() bool
+        +test() bool
+        +calibrate() bool
     }
     
-    class Relay_Config {
-        +GPIO: GPIO_NUM_4
-        +Active_Level: HIGH
-        +STM32_Boot_Delay: 500ms
+    class IEventHandler {
+        <<interface>>
+        +registerCallback(event, callback, arg) void
+        +unregisterCallback(event) void
+        +triggerEvent(event, data) void
+        +enableEvent(event) bool
+        +disableEvent(event) bool
     }
     
-    class Button_Config {
-        +Relay_Button: GPIO_NUM_5
-        +Single_Button: GPIO_NUM_16
-        +Periodic_Button: GPIO_NUM_17
-        +Interval_Button: GPIO_NUM_4
-        +Debounce_Time: 200ms
+    %% Interface Implementations
+    class WiFiCommunication {
+        -esp_netif_t* netif
+        -wifi_config_t wifi_config
+        -wifi_event_callback_t callback
+        +init(config) bool
+        +connect() bool
+        +disconnect() void
+        +send(data, size) int
+        +receive(buffer, size) int
+        +isConnected() bool
+        +getState() connection_state_t
+        +registerCallback(callback, arg) void
     }
     
-    class Timing_Config {
-        +WiFi_Stabilization_Delay: 4000ms
-        +Main_Loop_Delay: 100ms
-        +Status_Log_Interval: 30000ms
+    class MQTTCommunication {
+        -esp_mqtt_client_handle_t client
+        -mqtt_config_t config
+        -mqtt_data_callback_t callback
+        +init(config) bool
+        +connect() bool
+        +disconnect() void
+        +send(data, size) int
+        +receive(buffer, size) int
+        +isConnected() bool
+        +getState() connection_state_t
+        +registerCallback(callback, arg) void
     }
+    
+    class UARTCommunication {
+        -uart_port_t port
+        -uart_config_t config
+        -stm32_data_callback_t callback
+        +init(config) bool
+        +connect() bool
+        +disconnect() void
+        +send(data, size) int
+        +receive(buffer, size) int
+        +isConnected() bool
+        +getState() connection_state_t
+        +registerCallback(callback, arg) void
+    }
+    
+    class CoAPCommunication {
+        -coap_context_t* context
+        -coap_config_t config
+        -coap_data_callback_t callback
+        +init(config) bool
+        +connect() bool
+        +disconnect() void
+        +send(data, size) int
+        +receive(buffer, size) int
+        +isConnected() bool
+        +getState() connection_state_t
+        +registerCallback(callback, arg) void
+    }
+    
+    class JSONDataProcessor {
+        -cJSON* parser_context
+        -size_t buffer_size
+        -parse_error_t last_error
+        +processData(input, output) bool
+        +validateData(data) bool
+        +formatData(data, format, buffer, size) int
+        +parseData(buffer, data) bool
+        +getLastError() error_code_t
+    }
+    
+    class RelayHardwareControl {
+        -gpio_num_t pin
+        -bool current_state
+        -relay_config_t config
+        +initialize(config) bool
+        +setState(state) bool
+        +getState() state_t
+        +reset() bool
+        +test() bool
+        +calibrate() bool
+    }
+    
+    class ButtonHardwareControl {
+        -gpio_num_t pins[4]
+        -button_config_t config
+        -uint32_t press_counts[4]
+        +initialize(config) bool
+        +setState(state) bool
+        +getState() state_t
+        +reset() bool
+        +test() bool
+        +calibrate() bool
+    }
+    
+    class SystemEventHandler {
+        -event_callback_map_t callbacks
+        -EventGroupHandle_t event_group
+        -TaskHandle_t event_task
+        +registerCallback(event, callback, arg) void
+        +unregisterCallback(event) void
+        +triggerEvent(event, data) void
+        +enableEvent(event) bool
+        +disableEvent(event) bool
+    }
+    
+    %% Interface Implementation Relationships
+    WiFiCommunication --|> ICommunicationInterface : implements
+    MQTTCommunication --|> ICommunicationInterface : implements
+    UARTCommunication --|> ICommunicationInterface : implements
+    CoAPCommunication --|> ICommunicationInterface : implements
+    
+    JSONDataProcessor --|> IDataProcessor : implements
+    
+    RelayHardwareControl --|> IHardwareControl : implements
+    ButtonHardwareControl --|> IHardwareControl : implements
+    
+    SystemEventHandler --|> IEventHandler : implements
+    
+    %% Main System Dependencies
+    main --> ICommunicationInterface : uses
+    main --> IDataProcessor : uses
+    main --> IHardwareControl : uses
+    main --> IEventHandler : uses
+    
+    %% Specific Implementations Used
+    WiFiManager --> WiFiCommunication : uses
+    MQTTHandler --> MQTTCommunication : uses
+    STM32_UART --> UARTCommunication : uses
+    CoAPHandler --> CoAPCommunication : uses
+    JSONSensorParser --> JSONDataProcessor : uses
+    RelayControl --> RelayHardwareControl : uses
+    ButtonHandler --> ButtonHardwareControl : uses
+    main --> SystemEventHandler : uses
 ```
 
-## State Synchronization Flow
+## Hardware Abstraction Layer UML Diagram
 
 ```mermaid
-sequenceDiagram
-    participant Main
-    participant State as Global State
-    participant MQTT
-    participant Broker
-    participant Web
+classDiagram
+    %% Hardware Abstraction Layer
+    class ESP32_HAL {
+        <<abstract>>
+        +hal_init() bool
+        +hal_deinit() void
+        +hal_reset() bool
+        +hal_get_chip_info() chip_info_t
+        +hal_set_cpu_freq(freq) bool
+        +hal_get_free_heap() size_t
+        +hal_delay_ms(ms) void
+        +hal_delay_us(us) void
+    }
     
-    Note over State: g_device_on<br/>g_periodic_active<br/>mqtt_current_state
+    class GPIO_HAL {
+        <<abstract>>
+        +gpio_init(pin, mode) bool
+        +gpio_set_level(pin, level) void
+        +gpio_get_level(pin) int
+        +gpio_set_direction(pin, direction) bool
+        +gpio_set_pull_mode(pin, mode) bool
+        +gpio_install_isr_service(flags) bool
+        +gpio_isr_handler_add(pin, handler, args) bool
+        +gpio_isr_handler_remove(pin) bool
+    }
     
-    Main->>State: Update g_device_on = true
-    activate Main
-    State->>State: Detect change
-    State->>Main: state_changed = true
-    Main->>MQTT: Check if connected
-    activate MQTT
-    MQTT->>Main: connected = true
-    deactivate MQTT
-    Main->>Main: create_state_message()
-    Main->>MQTT: MQTT_Handler_Publish<br/>(datalogger/esp32/system/state, retain=1)
-    activate MQTT
-    MQTT->>Broker: Publish JSON state
-    activate Broker
-    Broker->>Web: Forward state message
-    activate Web
-    Web->>Web: Update UI
-    deactivate Web
-    deactivate Broker
-    deactivate MQTT
-    deactivate Main
+    class UART_HAL {
+        <<abstract>>
+        +uart_init(port, config) bool
+        +uart_deinit(port) void
+        +uart_write(port, data, size) int
+        +uart_read(port, buffer, size) int
+        +uart_flush(port) void
+        +uart_set_baudrate(port, rate) bool
+        +uart_get_baudrate(port) int
+        +uart_wait_tx_done(port, timeout) bool
+    }
     
-    Note over Main,Web: State synchronized across system
+    class WiFi_HAL {
+        <<abstract>>
+        +wifi_init() bool
+        +wifi_deinit() void
+        +wifi_start() bool
+        +wifi_stop() bool
+        +wifi_connect(ssid, password) bool
+        +wifi_disconnect() void
+        +wifi_scan_start() bool
+        +wifi_get_rssi() int8_t
+    }
+    
+    class Timer_HAL {
+        <<abstract>>
+        +timer_init(group, timer, config) bool
+        +timer_deinit(group, timer) void
+        +timer_start(group, timer) bool
+        +timer_stop(group, timer) bool
+        +timer_set_counter_value(group, timer, value) bool
+        +timer_get_counter_value(group, timer) uint64_t
+        +timer_set_alarm_value(group, timer, value) bool
+        +timer_enable_intr(group, timer) bool
+    }
+    
+    class SPI_HAL {
+        <<abstract>>
+        +spi_init(host, config) bool
+        +spi_deinit(host) void
+        +spi_transmit(host, data, size) bool
+        +spi_receive(host, buffer, size) bool
+        +spi_transmit_receive(host, tx_data, rx_data, size) bool
+        +spi_set_frequency(host, freq) bool
+        +spi_get_frequency(host) int
+    }
+    
+    class I2C_HAL {
+        <<abstract>>
+        +i2c_init(port, config) bool
+        +i2c_deinit(port) void
+        +i2c_master_write(port, addr, data, size) bool
+        +i2c_master_read(port, addr, buffer, size) bool
+        +i2c_master_write_read(port, addr, write_data, write_size, read_data, read_size) bool
+        +i2c_set_frequency(port, freq) bool
+        +i2c_scan_bus(port, devices, max_devices) int
+    }
+    
+    %% Concrete HAL Implementations
+    class ESP32_GPIO_Driver {
+        -gpio_config_t pin_configs[GPIO_NUM_MAX]
+        -gpio_isr_t isr_handlers[GPIO_NUM_MAX]
+        +gpio_init(pin, mode) bool
+        +gpio_set_level(pin, level) void
+        +gpio_get_level(pin) int
+        +gpio_set_direction(pin, direction) bool
+        +gpio_set_pull_mode(pin, mode) bool
+        +gpio_install_isr_service(flags) bool
+        +gpio_isr_handler_add(pin, handler, args) bool
+        +gpio_isr_handler_remove(pin) bool
+    }
+    
+    class ESP32_UART_Driver {
+        -uart_config_t port_configs[UART_NUM_MAX]
+        -QueueHandle_t uart_queues[UART_NUM_MAX]
+        +uart_init(port, config) bool
+        +uart_deinit(port) void
+        +uart_write(port, data, size) int
+        +uart_read(port, buffer, size) int
+        +uart_flush(port) void
+        +uart_set_baudrate(port, rate) bool
+        +uart_get_baudrate(port) int
+        +uart_wait_tx_done(port, timeout) bool
+    }
+    
+    class ESP32_WiFi_Driver {
+        -wifi_config_t station_config
+        -wifi_config_t ap_config
+        -esp_netif_t* netif_sta
+        -esp_netif_t* netif_ap
+        +wifi_init() bool
+        +wifi_deinit() void
+        +wifi_start() bool
+        +wifi_stop() bool
+        +wifi_connect(ssid, password) bool
+        +wifi_disconnect() void
+        +wifi_scan_start() bool
+        +wifi_get_rssi() int8_t
+    }
+    
+    class ESP32_Timer_Driver {
+        -timer_config_t timer_configs[TIMER_GROUP_MAX][TIMER_MAX]
+        -timer_isr_t timer_isrs[TIMER_GROUP_MAX][TIMER_MAX]
+        +timer_init(group, timer, config) bool
+        +timer_deinit(group, timer) void
+        +timer_start(group, timer) bool
+        +timer_stop(group, timer) bool
+        +timer_set_counter_value(group, timer, value) bool
+        +timer_get_counter_value(group, timer) uint64_t
+        +timer_set_alarm_value(group, timer, value) bool
+        +timer_enable_intr(group, timer) bool
+    }
+    
+    %% HAL Implementation Relationships
+    ESP32_GPIO_Driver --|> GPIO_HAL : implements
+    ESP32_UART_Driver --|> UART_HAL : implements
+    ESP32_WiFi_Driver --|> WiFi_HAL : implements
+    ESP32_Timer_Driver --|> Timer_HAL : implements
+    
+    %% Component to HAL Dependencies
+    RelayControl --> GPIO_HAL : uses
+    ButtonHandler --> GPIO_HAL : uses
+    STM32_UART --> UART_HAL : uses
+    WiFiManager --> WiFi_HAL : uses
+    
+    %% HAL Layer Composition
+    ESP32_HAL *-- GPIO_HAL : contains
+    ESP32_HAL *-- UART_HAL : contains
+    ESP32_HAL *-- WiFi_HAL : contains
+    ESP32_HAL *-- Timer_HAL : contains
+    ESP32_HAL *-- SPI_HAL : contains
+    ESP32_HAL *-- I2C_HAL : contains
 ```
 
-## Error Handling and Retry Logic
+## Task and Memory Management UML Diagram
 
 ```mermaid
-stateDiagram-v2
-    [*] --> WiFi_Retry_Logic
-    
-    state WiFi_Retry_Logic {
-        [*] --> Attempt_1
-        Attempt_1 --> Attempt_2 : failed (2s delay)
-        Attempt_2 --> Attempt_3 : failed (2s delay)
-        Attempt_3 --> Attempt_4 : failed (2s delay)
-        Attempt_4 --> Attempt_5 : failed (2s delay)
-        Attempt_5 --> Manual_Retry : failed (2s delay)
-        Manual_Retry --> Attempt_1 : retry (5s interval)
-        
-        Attempt_1 --> [*] : success
-        Attempt_2 --> [*] : success
-        Attempt_3 --> [*] : success
-        Attempt_4 --> [*] : success
-        Attempt_5 --> [*] : success
+classDiagram
+    class TaskManager {
+        -TaskHandle_t task_handles[MAX_TASKS]
+        -task_info_t task_infos[MAX_TASKS]
+        -uint8_t task_count
+        -SemaphoreHandle_t task_mutex
+        +TaskManager_Init() bool
+        +TaskManager_CreateTask(task_func, name, stack_size, params, priority) TaskHandle_t
+        +TaskManager_DeleteTask(handle) bool
+        +TaskManager_SuspendTask(handle) bool
+        +TaskManager_ResumeTask(handle) bool
+        +TaskManager_GetTaskInfo(handle) task_info_t*
+        +TaskManager_GetTaskList(list, max_count) int
+        +TaskManager_GetSystemStats() system_stats_t
+        +TaskManager_SetWatchdog(handle, timeout) bool
+        +TaskManager_FeedWatchdog(handle) bool
+        +TaskManager_Cleanup() void
     }
     
-    WiFi_Retry_Logic --> MQTT_Retry_Logic
-    
-    state MQTT_Retry_Logic {
-        [*] --> First_Attempt
-        First_Attempt --> Retry_1 : failed (1s delay)
-        Retry_1 --> Retry_2 : failed (2s delay)
-        Retry_2 --> Retry_3 : failed (4s delay)
-        Retry_3 --> Retry_4 : failed (8s delay)
-        Retry_4 --> Retry_5 : failed (16s delay)
-        Retry_5 --> Retry_Max : failed (32s delay)
-        Retry_Max --> Retry_Max : failed (60s max delay)
-        
-        First_Attempt --> [*] : success
-        Retry_1 --> [*] : success
-        Retry_2 --> [*] : success
-        Retry_3 --> [*] : success
-        Retry_4 --> [*] : success
-        Retry_5 --> [*] : success
-        Retry_Max --> [*] : success
+    class MemoryManager {
+        -heap_stats_t heap_stats
+        -memory_pool_t pools[MAX_POOLS]
+        -uint8_t pool_count
+        -SemaphoreHandle_t memory_mutex
+        +MemoryManager_Init() bool
+        +MemoryManager_Malloc(size) void*
+        +MemoryManager_Calloc(count, size) void*
+        +MemoryManager_Realloc(ptr, size) void*
+        +MemoryManager_Free(ptr) void
+        +MemoryManager_CreatePool(size, block_size) memory_pool_t*
+        +MemoryManager_DestroyPool(pool) bool
+        +MemoryManager_GetHeapStats() heap_stats_t
+        +MemoryManager_CheckIntegrity() bool
+        +MemoryManager_PrintStats() void
+        +MemoryManager_SetLowMemoryCallback(callback, threshold) bool
     }
     
-    MQTT_Retry_Logic --> [*]
+    class QueueManager {
+        -QueueHandle_t queues[MAX_QUEUES]
+        -queue_info_t queue_infos[MAX_QUEUES]
+        -uint8_t queue_count
+        -SemaphoreHandle_t queue_mutex
+        +QueueManager_Init() bool
+        +QueueManager_CreateQueue(length, item_size, name) QueueHandle_t
+        +QueueManager_DeleteQueue(handle) bool
+        +QueueManager_Send(handle, item, timeout) bool
+        +QueueManager_Receive(handle, buffer, timeout) bool
+        +QueueManager_SendFromISR(handle, item, higher_priority_task_woken) bool
+        +QueueManager_ReceiveFromISR(handle, buffer, higher_priority_task_woken) bool
+        +QueueManager_GetQueueInfo(handle) queue_info_t*
+        +QueueManager_GetQueueStats(handle) queue_stats_t
+        +QueueManager_Reset(handle) bool
+        +QueueManager_Cleanup() void
+    }
+    
+    class SemaphoreManager {
+        -SemaphoreHandle_t semaphores[MAX_SEMAPHORES]
+        -semaphore_info_t semaphore_infos[MAX_SEMAPHORES]
+        -uint8_t semaphore_count
+        -SemaphoreHandle_t semaphore_mutex
+        +SemaphoreManager_Init() bool
+        +SemaphoreManager_CreateMutex(name) SemaphoreHandle_t
+        +SemaphoreManager_CreateBinary(name) SemaphoreHandle_t
+        +SemaphoreManager_CreateCounting(max_count, initial_count, name) SemaphoreHandle_t
+        +SemaphoreManager_Delete(handle) bool
+        +SemaphoreManager_Take(handle, timeout) bool
+        +SemaphoreManager_Give(handle) bool
+        +SemaphoreManager_TakeFromISR(handle, higher_priority_task_woken) bool
+        +SemaphoreManager_GiveFromISR(handle, higher_priority_task_woken) bool
+        +SemaphoreManager_GetSemaphoreInfo(handle) semaphore_info_t*
+        +SemaphoreManager_Cleanup() void
+    }
+    
+    class EventGroupManager {
+        -EventGroupHandle_t event_groups[MAX_EVENT_GROUPS]
+        -event_group_info_t event_group_infos[MAX_EVENT_GROUPS]
+        -uint8_t event_group_count
+        -SemaphoreHandle_t event_group_mutex
+        +EventGroupManager_Init() bool
+        +EventGroupManager_Create(name) EventGroupHandle_t
+        +EventGroupManager_Delete(handle) bool
+        +EventGroupManager_SetBits(handle, bits) EventBits_t
+        +EventGroupManager_ClearBits(handle, bits) EventBits_t
+        +EventGroupManager_WaitBits(handle, bits, clear_on_exit, wait_for_all, timeout) EventBits_t
+        +EventGroupManager_SetBitsFromISR(handle, bits, higher_priority_task_woken) bool
+        +EventGroupManager_ClearBitsFromISR(handle, bits) EventBits_t
+        +EventGroupManager_GetEventGroupInfo(handle) event_group_info_t*
+        +EventGroupManager_Cleanup() void
+    }
+    
+    %% Data Structures
+    class task_info_t {
+        +TaskHandle_t handle
+        +char name[16]
+        +UBaseType_t priority
+        +uint32_t stack_size
+        +eTaskState state
+        +uint32_t run_time_counter
+        +uint16_t stack_high_water_mark
+        +TaskFunction_t task_function
+        +void* parameters
+        +TickType_t creation_time
+    }
+    
+    class system_stats_t {
+        +uint32_t total_heap_size
+        +uint32_t free_heap_size
+        +uint32_t minimum_free_heap_size
+        +uint32_t largest_free_block
+        +uint8_t task_count
+        +uint32_t total_runtime
+        +uint32_t cpu_usage_percent
+        +TickType_t uptime_ticks
+    }
+    
+    class memory_pool_t {
+        +void* pool_memory
+        +size_t pool_size
+        +size_t block_size
+        +uint32_t total_blocks
+        +uint32_t free_blocks
+        +uint8_t* allocation_bitmap
+        +SemaphoreHandle_t pool_mutex
+        +char name[16]
+    }
+    
+    class heap_stats_t {
+        +size_t total_free_bytes
+        +size_t total_allocated_bytes
+        +size_t largest_free_block
+        +size_t minimum_free_bytes
+        +size_t number_of_free_blocks
+        +size_t number_of_successful_allocations
+        +size_t number_of_successful_frees
+    }
+    
+    class queue_info_t {
+        +QueueHandle_t handle
+        +UBaseType_t length
+        +UBaseType_t item_size
+        +char name[16]
+        +TickType_t creation_time
+        +uint32_t messages_sent
+        +uint32_t messages_received
+        +uint32_t send_failures
+        +uint32_t receive_failures
+    }
+    
+    class semaphore_info_t {
+        +SemaphoreHandle_t handle
+        +SemaphoreType_t type
+        +char name[16]
+        +TickType_t creation_time
+        +uint32_t take_count
+        +uint32_t give_count
+        +TaskHandle_t holder
+        +TickType_t last_taken_time
+    }
+    
+    class event_group_info_t {
+        +EventGroupHandle_t handle
+        +char name[16]
+        +TickType_t creation_time
+        +EventBits_t current_bits
+        +uint32_t set_count
+        +uint32_t clear_count
+        +uint32_t wait_count
+    }
+    
+    %% Manager Relationships
+    TaskManager *-- task_info_t : manages
+    TaskManager *-- system_stats_t : generates
+    MemoryManager *-- memory_pool_t : manages
+    MemoryManager *-- heap_stats_t : tracks
+    QueueManager *-- queue_info_t : manages
+    SemaphoreManager *-- semaphore_info_t : manages
+    EventGroupManager *-- event_group_info_t : manages
+    
+    %% System Dependencies
+    main --> TaskManager : uses
+    main --> MemoryManager : uses
+    main --> QueueManager : uses
+    main --> SemaphoreManager : uses
+    main --> EventGroupManager : uses
+    
+    %% Component Dependencies
+    WiFiManager --> TaskManager : creates tasks
+    MQTTHandler --> TaskManager : creates tasks
+    STM32_UART --> TaskManager : creates tasks
+    WiFiManager --> QueueManager : uses queues
+    MQTTHandler --> QueueManager : uses queues
+    STM32_UART --> QueueManager : uses queues
+    ButtonHandler --> SemaphoreManager : uses semaphores
+    RelayControl --> SemaphoreManager : uses semaphores
+    main --> EventGroupManager : uses event groups
 ```
 
-## Summary
+---
 
-The ESP32 firmware architecture is built around a component-based design with clear separation of concerns:
+## UML Diagram Conventions
 
-- **Main Application**: Orchestrates all components and manages application state
-- **WiFi Manager**: Handles WiFi connectivity with automatic retry logic
-- **UART Handler**: Manages line-based communication with STM32 via ring buffer
-- **MQTT Handler**: Provides MQTT client with exponential backoff retry
-- **Relay Control**: Controls relay GPIO with state callbacks
-- **JSON Parser**: Parses sensor data with mode-specific routing
-- **JSON Utils**: Provides centralized JSON formatting utilities
-- **Button Handler**: Monitors button presses with debouncing
-- **Ring Buffer**: Circular buffer for UART data reception
+### Class Diagram Elements
+- **Classes**: Represented with class name, attributes (-private, +public), and methods
+- **Interfaces**: Marked with `<<interface>>` stereotype
+- **Abstract Classes**: Marked with `<<abstract>>` stereotype
+- **Enumerations**: Marked with `<<enumeration>>` stereotype
+- **Data Structures**: C-style structs and configuration objects
 
-All components use callback-based event handling for loose coupling and operate within the FreeRTOS task model. The architecture ensures reliable WiFi/MQTT connectivity, proper STM32 communication, and responsive user interaction through buttons and web interface.
+### Relationship Types
+- **Composition** (`*--`): Strong ownership relationship (lifetime dependency)
+- **Aggregation** (`o--`): Weak ownership relationship (shared ownership)
+- **Association** (`-->`): "uses" or "depends on" relationship
+- **Inheritance** (`<|--`): "extends" or "inherits from" relationship (limited in C)
+- **Realization** (`--|>`): "implements" relationship for interfaces
+- **Dependency** (`..>`): Configuration or temporary usage relationship
 
-**Key Features:**
-- 4-second WiFi stabilization delay before MQTT start
-- 500ms delay after relay toggle for STM32 boot time
-- Exponential backoff retry for MQTT reconnection
-- Device state protection (buttons disabled when relay OFF)
-- State synchronization via MQTT retained messages
-- Automatic WiFi reconnection with 5 retry attempts
+### Visibility Modifiers
+- **Public** (`+`): Accessible from outside the module (in header files)
+- **Private** (`-`): Internal to the module (static functions, private variables)
+
+### ESP32 Specific Patterns
+- **Component Architecture**: Each component is self-contained with its own initialization
+- **Callback Pattern**: Event-driven communication between components
+- **RTOS Integration**: FreeRTOS tasks, queues, semaphores, and event groups
+- **Hardware Abstraction**: HAL layer separating hardware-specific and application code
+- **Configuration Structures**: C structs for component configuration
+- **State Machines**: Explicit state management for connection states and operation modes
+
+### Design Patterns Represented
+- **Component Pattern**: Modular, reusable firmware components
+- **Observer Pattern**: Callback-based event notification system
+- **State Pattern**: Connection state management with explicit transitions
+- **Bridge Pattern**: Hardware abstraction layer for portability
+- **Factory Pattern**: Configuration-based component initialization
+- **Singleton Pattern**: Global application state and manager instances

@@ -1,77 +1,8 @@
-# Web Application - Architecture & UML Diagrams
+# Web Application - UML Diagrams
 
-Comprehensive architecture documentation for the DataLogger web monitoring application.
+This document contains all UML diagrams for the DataLogger web application architecture, including class diagrams, component diagrams, and structural relationships.
 
----
-
-## 1. Complete System Architecture
-
-```mermaid
-graph TB
-    subgraph Browser["Browser Environment"]
-        subgraph UI["User Interface Layer"]
-            HTML[index.html<br/>DOM Structure<br/>7 Pages]
-            CSS[style.css<br/>Cyan Theme<br/>Dark/Light Mode]
-            Icons[Feather Icons<br/>SVG Icons]
-        end
-        
-        subgraph AppLayer["Application Layer"]
-            AppJS[app.js<br/>3062 lines<br/>Main Logic]
-            ChartJS[Chart.js<br/>Line Charts<br/>Animations]
-            MQTTJS[mqtt.min.js<br/>WebSocket Client]
-            FirebaseJS[Firebase SDK<br/>Realtime Database]
-        end
-        
-        subgraph State["State Management"]
-            GlobalVars[Global Variables<br/>isPeriodic<br/>isDeviceOn<br/>currentTemp/Humi]
-            DataArrays[Data Arrays<br/>temperatureData<br/>humidityData<br/>logBuffer<br/>liveDataBuffer]
-            ComponentHealth[Component Health<br/>SHT31 Status<br/>DS3231 Status]
-        end
-    end
-    
-    subgraph External["External Services"]
-        MQTT[MQTT Broker<br/>Mosquitto<br/>127.0.0.1:8083<br/>WebSocket]
-        Firebase[Firebase<br/>Realtime Database<br/>datalogger-8c5d5]
-        Internet[Internet Time<br/>Browser Time API<br/>UTC+7]
-    end
-    
-    subgraph Hardware["Hardware Layer"]
-        ESP32[ESP32<br/>WiFi Bridge<br/>MQTT Client]
-        STM32[STM32<br/>Data Logger<br/>Sensor Controller]
-        Sensors[Sensors<br/>SHT31<br/>DS3231 RTC]
-    end
-    
-    HTML --> AppJS
-    CSS --> HTML
-    Icons --> HTML
-    
-    AppJS --> ChartJS
-    AppJS --> MQTTJS
-    AppJS --> FirebaseJS
-    
-    AppJS --> GlobalVars
-    AppJS --> DataArrays
-    AppJS --> ComponentHealth
-    
-    MQTTJS --> MQTT
-    FirebaseJS --> Firebase
-    AppJS --> Internet
-    
-    MQTT --> ESP32
-    ESP32 --> STM32
-    STM32 --> Sensors
-    
-    ESP32 -.UART.-> STM32
-    
-    style Browser fill:#06B6D4,stroke:#0891B2,stroke-width:3px,color:#fff
-    style External fill:#F97316,stroke:#EA580C,stroke-width:2px,color:#fff
-    style Hardware fill:#8B5CF6,stroke:#7C3AED,stroke-width:2px,color:#fff
-    style AppJS fill:#10B981,stroke:#059669,stroke-width:2px,color:#fff
-```
-
----
-
-## 2. Application Class Diagram
+## Web Application Class Diagram
 
 ```mermaid
 classDiagram
@@ -83,104 +14,159 @@ classDiagram
         -currentTemp: float
         -currentHumi: float
         -lastReadingTimestamp: number
-        +initialize()
-        +initializeFirebase()
-        +initializeMQTT()
-        +initializeCharts()
+        -temperatureData: number[]
+        -humidityData: number[]
+        -liveDataBuffer: object[]
+        -logBuffer: object[]
+        +initialize() void
+        +initializeFirebase() boolean
+        +initializeMQTT() boolean
+        +initializeCharts() boolean
+        +shutdown() void
     }
     
     class MQTTManager {
         -mqttClient: MQTTClient
         -MQTT_CONFIG: object
-        +connect()
-        +subscribe(topic, qos)
-        +publish(topic, message, qos)
-        +handleMessage(topic, payload)
-        +updateStatus(connected)
-        +requestStateSync()
+        -connectionState: ConnectionState
+        -subscriptions: string[]
+        -messageHandlers: Map<string, Function>
+        +connect() boolean
+        +disconnect() void
+        +subscribe(topic, qos) boolean
+        +publish(topic, message, qos) boolean
+        +handleMessage(topic, payload) void
+        +updateStatus(connected) void
+        +requestStateSync() void
+        +isConnected() boolean
     }
     
     class FirebaseManager {
         -firebaseDb: Database
         -FIREBASE_CONFIG: object
-        +initialize()
-        +saveRecord(data)
-        +loadHistory(dateRange)
-        +testPermissions()
-        +updateStatus(connected)
+        -connectionState: ConnectionState
+        -realtimeRef: Reference
+        +initialize() boolean
+        +saveRecord(data) Promise<boolean>
+        +loadHistory(dateRange) Promise<object[]>
+        +testPermissions() Promise<boolean>
+        +updateStatus(connected) void
+        +getConnectionState() ConnectionState
+        +cleanup() void
     }
     
     class ChartManager {
         -tempChart: Chart
         -humiChart: Chart
-        -temperatureData: array
-        -humidityData: array
+        -temperatureData: number[]
+        -humidityData: number[]
         -maxDataPoints: number
-        +initializeCharts()
-        +pushTemperature(value, update, timestamp)
-        +pushHumidity(value, update, timestamp)
-        +updateChartStats(type)
-        +clearChartData()
-        +ensureChartsInitialized()
+        -updateInterval: number
+        -chartConfig: ChartConfiguration
+        +initializeCharts() boolean
+        +pushTemperature(value, update, timestamp) void
+        +pushHumidity(value, update, timestamp) void
+        +updateChartStats(type) void
+        +clearChartData() void
+        +ensureChartsInitialized() boolean
+        +exportChartImage() Blob
     }
     
     class UIController {
-        +updateCurrentDisplay()
-        +updateMQTTStatus(connected)
-        +updateFirebaseStatus(connected)
-        +updateDeviceButton(isOn)
-        +updatePeriodicButton(isOn)
-        +renderLiveDataTable()
-        +renderDataManagementTable(data)
-        +renderFullConsole()
+        -currentPage: string
+        -componentStates: Map<string, object>
+        -eventHandlers: Map<string, Function>
+        +switchPage(pageId) void
+        +updateCurrentDisplay() void
+        +updateMQTTStatus(connected) void
+        +updateFirebaseStatus(connected) void
+        +updateDeviceButton(isOn) void
+        +updatePeriodicButton(isOn) void
+        +renderLiveDataTable() void
+        +renderDataManagementTable(data) void
+        +renderFullConsole() void
+        +showToast(message, type) void
+        +bindEventHandlers() void
     }
     
     class CommandHandler {
-        +handleDeviceToggle()
-        +handlePeriodicToggle()
-        +handleSingleRead()
-        +handleIntervalConfig()
-        +handleTimeSync()
-        +handleManualTimeSet()
+        -deviceState: DeviceState
+        -commandQueue: Command[]
+        -retryCount: number
+        +handleDeviceToggle() void
+        +handlePeriodicToggle() void
+        +handleSingleRead() void
+        +handleIntervalConfig(interval) void
+        +handleTimeSync() void
+        +handleManualTimeSet(dateTime) void
+        +handleRelayControl(state) void
+        +validateCommand(command) boolean
+        +queueCommand(command) void
+        +processCommandQueue() void
     }
     
     class StateManager {
         -stateSync: object
         -deviceClockMs: number
         -deviceClockSetAtMs: number
-        +syncUIWithHardwareState(state)
-        +parseStateMessage(message)
-        +startDeviceClockTicker()
+        -lastSyncTimestamp: number
+        -stateCacheTimeout: number
+        +syncUIWithHardwareState(state) void
+        +parseStateMessage(message) object
+        +startDeviceClockTicker() void
+        +updateDeviceState(key, value) void
+        +getDeviceState() object
+        +clearStateCache() void
+        +validateState(state) boolean
     }
     
     class DataManager {
-        -liveDataBuffer: array
-        -filteredDataCache: array
-        +addToLiveDataTable(data)
-        +applyDataFilters()
-        +applySorting(data, sortBy)
-        +updateDataStatistics(data)
-        +exportFilteredData()
-        +resetDataFilters()
+        -liveDataBuffer: DataRecord[]
+        -filteredDataCache: DataRecord[]
+        -maxBufferSize: number
+        -dataFilters: FilterSettings
+        -sortSettings: SortSettings
+        +addToLiveDataTable(data) void
+        +applyDataFilters() DataRecord[]
+        +applySorting(data, sortBy) DataRecord[]
+        +updateDataStatistics(data) Statistics
+        +exportFilteredData() Blob
+        +resetDataFilters() void
+        +clearDataBuffer() void
+        +getBufferSize() number
+        +validateDataRecord(record) boolean
     }
     
     class ComponentHealthMonitor {
-        -componentHealth: object
-        +updateComponentHealth(component, isHealthy)
-        +updateComponentCard(component)
-        +getTimeAgo(timestamp)
+        -componentHealth: Map<string, HealthStatus>
+        -healthCheckInterval: number
+        -alertThresholds: Map<string, number>
+        -lastHealthUpdate: number
+        +updateComponentHealth(component, isHealthy) void
+        +updateComponentCard(component) void
+        +getTimeAgo(timestamp) string
+        +getOverallHealth() HealthLevel
+        +startHealthMonitoring() void
+        +stopHealthMonitoring() void
+        +isComponentHealthy(component) boolean
+        +triggerHealthAlert(component, issue) void
     }
     
     class LoggingSystem {
-        -logBuffer: array
+        -logBuffer: LogEntry[]
         -maxLogsInMemory: number
         -logFilterType: string
-        +addStatus(message, type)
-        +updateConsoleDisplay(logEntry)
-        +renderFullConsole()
-        +filterLogs(type)
-        +clearLogs()
-        +exportLogs()
+        -logLevels: string[]
+        -enabledLogTypes: Set<string>
+        +addStatus(message, type) void
+        +updateConsoleDisplay(logEntry) void
+        +renderFullConsole() void
+        +filterLogs(type) LogEntry[]
+        +clearLogs() void
+        +exportLogs() Blob
+        +setLogLevel(level) void
+        +enableLogType(type) void
+        +disableLogType(type) void
     }
     
     class TimeManager {
@@ -190,731 +176,723 @@ classDiagram
         -timePickerHour: number
         -timePickerMinute: number
         -timePickerSecond: number
-        +renderCalendar()
-        +updateTimeDisplay()
-        +adjustTime(unit, delta)
+        -clockTickerInterval: number
+        -timeZoneOffset: number
+        +renderCalendar() void
+        +updateTimeDisplay() void
+        +adjustTime(unit, delta) void
+        +syncFromInternet() void
+        +setManualTime() void
+        +getCurrentTime() Date
+        +formatDateTime(timestamp) string
+        +validateTimeInput(dateTime) boolean
     }
     
     class NavigationManager {
-        +bindMenuNavigation()
-        +switchPage(page)
-        +initializePage(page)
-        +bindCalendarButtons()
-        +bindDataManagementButtons()
-        +bindLogsButtons()
+        -currentPage: string
+        -pageHistory: string[]
+        -navigationHandlers: Map<string, Function>
+        +bindMenuNavigation() void
+        +switchPage(page) void
+        +initializePage(page) void
+        +bindCalendarButtons() void
+        +bindDataManagementButtons() void
+        +bindLogsButtons() void
+        +goBack() void
+        +goForward() void
+        +addToHistory(page) void
     }
     
-    WebApplication --> MQTTManager
-    WebApplication --> FirebaseManager
-    WebApplication --> ChartManager
-    WebApplication --> UIController
-    WebApplication --> CommandHandler
-    WebApplication --> StateManager
-    WebApplication --> DataManager
-    WebApplication --> ComponentHealthMonitor
-    WebApplication --> LoggingSystem
-    WebApplication --> TimeManager
-    WebApplication --> NavigationManager
+    class SettingsManager {
+        -settings: Settings
+        -defaultSettings: Settings
+        -settingsKey: string
+        +loadSettings() Settings
+        +saveSettings(settings) boolean
+        +resetToDefaults() void
+        +exportSettings() Blob
+        +importSettings(file) boolean
+        +validateSettings(settings) boolean
+        +getSettingValue(key) any
+        +setSettingValue(key, value) void
+        +applySettings() void
+    }
     
-    MQTTManager --> StateManager
-    MQTTManager --> DataManager
-    MQTTManager --> ComponentHealthMonitor
+    %% Data Transfer Objects
+    class DataRecord {
+        +timestamp: number
+        +temperature: number
+        +humidity: number
+        +mode: string
+        +status: string
+        +device: string
+        +sensor: string
+        +error: string
+        +created: number
+        +toJSON() string
+        +fromJSON(json) DataRecord
+        +validate() boolean
+    }
     
-    FirebaseManager --> DataManager
+    class LogEntry {
+        +timestamp: number
+        +message: string
+        +type: string
+        +level: string
+        +source: string
+        +details: object
+        +format() string
+        +toCSV() string
+    }
     
-    ChartManager --> UIController
+    class Command {
+        +type: CommandType
+        +parameters: Map<string, any>
+        +timestamp: number
+        +source: string
+        +target: string
+        +retryCount: number
+        +isValid() boolean
+        +execute() boolean
+        +retry() boolean
+    }
     
-    CommandHandler --> MQTTManager
-    CommandHandler --> TimeManager
+    class DeviceState {
+        +isDeviceOn: boolean
+        +isPeriodic: boolean
+        +currentInterval: number
+        +lastUpdate: number
+        +connectionStatus: ConnectionStatus
+        +sensorStatus: Map<string, SensorStatus>
+        +update(newState) void
+        +serialize() string
+        +deserialize(data) void
+    }
     
-    DataManager --> FirebaseManager
-    DataManager --> UIController
+    class ChartConfiguration {
+        +type: string
+        +data: ChartData
+        +options: ChartOptions
+        +plugins: Plugin[]
+        +responsive: boolean
+        +maintainAspectRatio: boolean
+        +animations: AnimationOptions
+        +scales: ScaleOptions
+    }
     
-    LoggingSystem --> UIController
+    class FilterSettings {
+        +dateFrom: Date
+        +dateTo: Date
+        +mode: string
+        +status: string
+        +temperatureMin: number
+        +temperatureMax: number
+        +humidityMin: number
+        +humidityMax: number
+        +apply(data) DataRecord[]
+        +reset() void
+        +validate() boolean
+    }
+    
+    class Statistics {
+        +totalRecords: number
+        +successRate: number
+        +avgTemperature: number
+        +minTemperature: number
+        +maxTemperature: number
+        +avgHumidity: number
+        +minHumidity: number
+        +maxHumidity: number
+        +calculate(data) Statistics
+        +format() string
+    }
+    
+    %% Enumerations
+    class ConnectionState {
+        <<enumeration>>
+        DISCONNECTED
+        CONNECTING
+        CONNECTED
+        ERROR
+        RECONNECTING
+    }
+    
+    class CommandType {
+        <<enumeration>>
+        DEVICE_TOGGLE
+        PERIODIC_TOGGLE
+        SINGLE_READ
+        TIME_SYNC
+        INTERVAL_CONFIG
+        RELAY_CONTROL
+        STATE_REQUEST
+    }
+    
+    class HealthLevel {
+        <<enumeration>>
+        HEALTHY
+        WARNING
+        ERROR
+        CRITICAL
+        UNKNOWN
+    }
+    
+    class LogLevel {
+        <<enumeration>>
+        DEBUG
+        INFO
+        WARNING
+        ERROR
+        CRITICAL
+    }
+    
+    class SensorStatus {
+        <<enumeration>>
+        ACTIVE
+        INACTIVE
+        ERROR
+        UNKNOWN
+    }
+    
+    %% Main Composition Relationships
+    WebApplication *-- MQTTManager : contains
+    WebApplication *-- FirebaseManager : contains
+    WebApplication *-- ChartManager : contains
+    WebApplication *-- UIController : contains
+    WebApplication *-- CommandHandler : contains
+    WebApplication *-- StateManager : contains
+    WebApplication *-- DataManager : contains
+    WebApplication *-- ComponentHealthMonitor : contains
+    WebApplication *-- LoggingSystem : contains
+    WebApplication *-- TimeManager : contains
+    WebApplication *-- NavigationManager : contains
+    WebApplication *-- SettingsManager : contains
+    
+    %% Manager Interactions
+    MQTTManager --> CommandHandler : sends commands
+    MQTTManager --> StateManager : updates state
+    MQTTManager --> DataManager : receives data
+    MQTTManager --> LoggingSystem : logs events
+    MQTTManager ..> ConnectionState : uses
+    
+    FirebaseManager --> DataManager : stores data
+    FirebaseManager --> LoggingSystem : logs operations
+    FirebaseManager ..> ConnectionState : uses
+    
+    ChartManager --> DataManager : consumes data
+    ChartManager --> UIController : updates display
+    ChartManager *-- ChartConfiguration : uses
+    
+    CommandHandler --> MQTTManager : publishes commands
+    CommandHandler --> StateManager : updates device state
+    CommandHandler --> TimeManager : handles time commands
+    CommandHandler *-- Command : creates
+    CommandHandler ..> CommandType : uses
+    
+    StateManager *-- DeviceState : manages
+    StateManager --> UIController : updates UI
+    StateManager --> LoggingSystem : logs state changes
+    
+    DataManager *-- DataRecord : manages
+    DataManager *-- FilterSettings : applies
+    DataManager *-- Statistics : calculates
+    DataManager --> LoggingSystem : logs operations
+    
+    ComponentHealthMonitor --> UIController : updates health display
+    ComponentHealthMonitor --> LoggingSystem : logs health events
+    ComponentHealthMonitor ..> HealthLevel : uses
+    ComponentHealthMonitor ..> SensorStatus : monitors
+    
+    LoggingSystem *-- LogEntry : creates
+    LoggingSystem --> UIController : displays logs
+    LoggingSystem ..> LogLevel : uses
+    
+    TimeManager --> CommandHandler : triggers time commands
+    TimeManager --> StateManager : updates time state
+    TimeManager --> UIController : updates time display
+    
+    NavigationManager --> UIController : controls page display
+    NavigationManager --> SettingsManager : loads page settings
+    
+    SettingsManager --> UIController : applies UI settings
+    SettingsManager --> ChartManager : applies chart settings
+    SettingsManager --> LoggingSystem : applies log settings
+    
+    %% Data Flow Dependencies
+    DataRecord --> Statistics : used for calculation
+    Command --> LogEntry : logged as entry
+    DeviceState --> DataRecord : provides context
 ```
 
----
-
-## 3. MQTT Topics & Message Architecture
+## Component Interface UML Diagram
 
 ```mermaid
-graph TB
-    subgraph WebApp["Web Application"]
-        Publisher[MQTT Publisher]
-        Subscriber[MQTT Subscriber]
-    end
+classDiagram
+    %% Core Interfaces
+    class IDataProvider {
+        <<interface>>
+        +getData(criteria) Promise<DataRecord[]>
+        +saveData(record) Promise<boolean>
+        +deleteData(criteria) Promise<boolean>
+        +validateData(record) boolean
+    }
     
-    subgraph Broker["MQTT Broker (Mosquitto)<br/>ws://127.0.0.1:8083/mqtt"]
-        Topic1[datalogger/stm32/command<br/>QoS: 1<br/>Web → STM32]
-        Topic2[datalogger/esp32/relay/control<br/>QoS: 1<br/>Web → ESP32]
-        Topic3[datalogger/esp32/system/state<br/>QoS: 1<br/>Bidirectional]
-        Topic4[datalogger/stm32/single/data<br/>QoS: 1<br/>STM32 → Web]
-        Topic5[datalogger/stm32/periodic/data<br/>QoS: 1<br/>STM32 → Web]
-    end
+    class ICommunicationBridge {
+        <<interface>>
+        +connect() Promise<boolean>
+        +disconnect() void
+        +send(message) Promise<boolean>
+        +receive() Observable<Message>
+        +isConnected() boolean
+        +getStatus() ConnectionState
+    }
     
-    subgraph Messages["Message Formats"]
-        Cmd1[SINGLE<br/>PERIODIC ON/OFF<br/>SET TIME timestamp<br/>SET INTERVAL seconds]
-        Cmd2[RELAY ON<br/>RELAY OFF]
-        Cmd3[REQUEST<br/>JSON: device/periodic]
-        Data1[JSON: temperature<br/>humidity<br/>timestamp]
-        Data2[JSON: temperature<br/>humidity<br/>timestamp<br/>mode: periodic]
-    end
+    class IDisplayController {
+        <<interface>>
+        +updateDisplay(data) void
+        +showMessage(message, type) void
+        +clearDisplay() void
+        +setTheme(theme) void
+        +render() void
+    }
     
-    Publisher --> Topic1
-    Publisher --> Topic2
-    Publisher --> Topic3
+    class IEventHandler {
+        <<interface>>
+        +handleEvent(event) void
+        +registerCallback(event, callback) void
+        +unregisterCallback(event) void
+        +triggerEvent(event, data) void
+    }
     
-    Topic4 --> Subscriber
-    Topic5 --> Subscriber
-    Topic3 --> Subscriber
+    class IStateManager {
+        <<interface>>
+        +getState(key) any
+        +setState(key, value) void
+        +subscribe(key, callback) void
+        +unsubscribe(key, callback) void
+        +clearState() void
+    }
     
-    Topic1 -.->|Command String| Cmd1
-    Topic2 -.->|Command String| Cmd2
-    Topic3 -.->|Request/JSON| Cmd3
-    Topic4 -.->|JSON Data| Data1
-    Topic5 -.->|JSON Data| Data2
+    class IHealthMonitor {
+        <<interface>>
+        +checkHealth() HealthStatus
+        +getComponentStatus(component) ComponentHealth
+        +startMonitoring() void
+        +stopMonitoring() void
+        +setThreshold(component, threshold) void
+    }
     
-    style WebApp fill:#06B6D4,stroke:#0891B2,stroke-width:2px
-    style Broker fill:#8B5CF6,stroke:#7C3AED,stroke-width:2px
-    style Messages fill:#10B981,stroke:#059669,stroke-width:2px
+    %% Implementation Classes
+    class MQTTCommunication {
+        -client: MQTTClient
+        -config: MQTTConfig
+        -messageQueue: Message[]
+        +connect() Promise<boolean>
+        +disconnect() void
+        +send(message) Promise<boolean>
+        +receive() Observable<Message>
+        +isConnected() boolean
+        +getStatus() ConnectionState
+    }
+    
+    class FirebaseDataProvider {
+        -database: Database
+        -config: FirebaseConfig
+        -cache: Map<string, any>
+        +getData(criteria) Promise<DataRecord[]>
+        +saveData(record) Promise<boolean>
+        +deleteData(criteria) Promise<boolean>
+        +validateData(record) boolean
+    }
+    
+    class ChartDisplayController {
+        -charts: Map<string, Chart>
+        -canvasElements: Map<string, HTMLCanvasElement>
+        -theme: Theme
+        +updateDisplay(data) void
+        +showMessage(message, type) void
+        +clearDisplay() void
+        +setTheme(theme) void
+        +render() void
+    }
+    
+    class TableDisplayController {
+        -tables: Map<string, HTMLTableElement>
+        -formatter: DataFormatter
+        -sorter: DataSorter
+        +updateDisplay(data) void
+        +showMessage(message, type) void
+        +clearDisplay() void
+        +setTheme(theme) void
+        +render() void
+    }
+    
+    class DOMEventHandler {
+        -listeners: Map<string, EventListener[]>
+        -eventQueue: Event[]
+        +handleEvent(event) void
+        +registerCallback(event, callback) void
+        +unregisterCallback(event) void
+        +triggerEvent(event, data) void
+    }
+    
+    class GlobalStateManager {
+        -state: Map<string, any>
+        -subscribers: Map<string, Function[]>
+        -persistence: Storage
+        +getState(key) any
+        +setState(key, value) void
+        +subscribe(key, callback) void
+        +unsubscribe(key, callback) void
+        +clearState() void
+    }
+    
+    class WebHealthMonitor {
+        -components: Map<string, ComponentMonitor>
+        -thresholds: Map<string, Threshold>
+        -alerts: Alert[]
+        +checkHealth() HealthStatus
+        +getComponentStatus(component) ComponentHealth
+        +startMonitoring() void
+        +stopMonitoring() void
+        +setThreshold(component, threshold) void
+    }
+    
+    %% Interface Implementations
+    MQTTCommunication --|> ICommunicationBridge : implements
+    FirebaseDataProvider --|> IDataProvider : implements
+    ChartDisplayController --|> IDisplayController : implements
+    TableDisplayController --|> IDisplayController : implements
+    DOMEventHandler --|> IEventHandler : implements
+    GlobalStateManager --|> IStateManager : implements
+    WebHealthMonitor --|> IHealthMonitor : implements
+    
+    %% Dependencies
+    WebApplication --> ICommunicationBridge : uses
+    WebApplication --> IDataProvider : uses
+    WebApplication --> IDisplayController : uses
+    WebApplication --> IEventHandler : uses
+    WebApplication --> IStateManager : uses
+    WebApplication --> IHealthMonitor : uses
+    
+    %% Composition within implementations
+    ChartDisplayController *-- ChartManager : contains
+    TableDisplayController *-- DataManager : contains
+    DOMEventHandler *-- NavigationManager : contains
+    GlobalStateManager *-- StateManager : contains
+    WebHealthMonitor *-- ComponentHealthMonitor : contains
 ```
 
----
-
-## 4. Firebase Database Structure
-
-```mermaid
-graph TB
-    subgraph Firebase["Firebase Realtime Database<br/>datalogger-8c5d5"]
-        Root[Root /]
-        
-        subgraph Readings["readings/"]
-            Date1[2025-01-20/]
-            Date2[2025-01-21/]
-            Date3[YYYY-MM-DD/]
-            
-            subgraph Record["timestamp_id/"]
-                Temp[temp: 25.3]
-                Humi[humi: 65.2]
-                Mode[mode: periodic]
-                Sensor[sensor: SHT31]
-                Status[status: success]
-                Error[error: null]
-                Time[time: 1704067200]
-                Device[device: ESP32_01]
-                Created[created_at: timestamp]
-            end
-        end
-        
-        subgraph Test["test/"]
-            Connection[connection/<br/>timestamp<br/>message]
-        end
-    end
-    
-    Root --> Readings
-    Root --> Test
-    
-    Readings --> Date1
-    Readings --> Date2
-    Readings --> Date3
-    
-    Date1 --> Record
-    Date2 --> Record
-    Date3 --> Record
-    
-    Record --> Temp
-    Record --> Humi
-    Record --> Mode
-    Record --> Sensor
-    Record --> Status
-    Record --> Error
-    Record --> Time
-    Record --> Device
-    Record --> Created
-    
-    style Firebase fill:#F97316,stroke:#EA580C,stroke-width:3px
-    style Readings fill:#06B6D4,stroke:#0891B2,stroke-width:2px
-    style Test fill:#10B981,stroke:#059669,stroke-width:2px
-```
-
----
-
-## 5. State Management Architecture
+## State Machine UML Diagram
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Initializing
+    [*] --> ApplicationStartup
     
-    state Initializing {
-        [*] --> LoadingFirebase
-        LoadingFirebase --> FirebaseReady: Init Success
-        LoadingFirebase --> FirebaseError: Init Failed
+    state ApplicationStartup {
+        [*] --> InitializingComponents
+        InitializingComponents --> FirebaseInit : Start Firebase
+        InitializingComponents --> MQTTInit : Start MQTT
+        InitializingComponents --> ChartInit : Start Charts
         
-        FirebaseReady --> ConnectingMQTT
-        FirebaseError --> ConnectingMQTT
+        FirebaseInit --> FirebaseReady : Success
+        FirebaseInit --> FirebaseError : Failed
         
-        ConnectingMQTT --> MQTTReady: Connected
-        ConnectingMQTT --> MQTTError: Connection Failed
+        MQTTInit --> MQTTReady : Connected
+        MQTTInit --> MQTTError : Failed
         
-        MQTTReady --> InitializingCharts
-        MQTTError --> InitializingCharts
+        ChartInit --> ChartReady : Canvas Found
+        ChartInit --> ChartRetry : Canvas Not Found
+        ChartRetry --> ChartInit : Retry < 10
+        ChartRetry --> ChartError : Max Retries
         
-        InitializingCharts --> ChartsReady: Canvas Found
-        InitializingCharts --> ChartsRetry: Canvas Not Found
+        FirebaseReady --> ComponentsReady
+        FirebaseError --> ComponentsReady
+        MQTTReady --> ComponentsReady
+        MQTTError --> ComponentsReady
+        ChartReady --> ComponentsReady
+        ChartError --> ComponentsReady
         
-        ChartsRetry --> InitializingCharts: Retry < 10
-        ChartsRetry --> ChartsFailed: Retry >= 10
-        
-        ChartsReady --> [*]
-        ChartsFailed --> [*]
-    end
+        ComponentsReady --> [*]
+    }
     
-    Initializing --> Ready: All Components Loaded
+    ApplicationStartup --> OperationalState : Initialization Complete
     
-    state Ready {
+    state OperationalState {
         [*] --> Idle
         
-        Idle --> DeviceControl: User Clicks Device Button
-        DeviceControl --> DeviceON: Toggle ON
-        DeviceControl --> DeviceOFF: Toggle OFF
+        Idle --> DeviceControl : User Device Action
+        Idle --> PeriodicControl : User Periodic Action
+        Idle --> SingleRead : User Single Read
+        Idle --> TimeSync : User Time Sync
+        Idle --> DataManagement : User Data Action
+        Idle --> ReceivingData : MQTT Data Arrives
         
-        state DeviceON {
-            [*] --> Running
-            Running --> PeriodicControl: User Clicks Periodic
-            PeriodicControl --> PeriodicON: Enable
-            PeriodicControl --> Running: Disable
+        state DeviceControl {
+            [*] --> CheckingDevice
+            CheckingDevice --> DeviceON : Turn ON
+            CheckingDevice --> DeviceOFF : Turn OFF
             
-            state PeriodicON {
-                [*] --> Measuring
-                Measuring --> DataReceived: MQTT Message
-                DataReceived --> ProcessingData
-                ProcessingData --> SavingFirebase
-                SavingFirebase --> UpdatingCharts
-                UpdatingCharts --> Measuring
-            }
+            DeviceON --> PublishingON : Send RELAY ON
+            DeviceOFF --> PublishingOFF : Send RELAY OFF
+            DeviceOFF --> StoppingPeriodic : Force Periodic OFF
+            
+            PublishingON --> [*]
+            PublishingOFF --> [*]
+            StoppingPeriodic --> PublishingOFF
         }
         
-        state DeviceOFF {
-            [*] --> Stopped
-            Stopped --> Idle: No Activity
+        state PeriodicControl {
+            [*] --> CheckingPeriodic
+            CheckingPeriodic --> PeriodicON : Start Periodic
+            CheckingPeriodic --> PeriodicOFF : Stop Periodic
+            
+            PeriodicON --> PublishingPeriodicON : Send PERIODIC ON
+            PeriodicOFF --> PublishingPeriodicOFF : Send PERIODIC OFF
+            
+            PublishingPeriodicON --> [*]
+            PublishingPeriodicOFF --> [*]
         }
         
-        DeviceON --> DeviceOFF: Toggle OFF
-        DeviceOFF --> DeviceON: Toggle ON
+        state SingleRead {
+            [*] --> ValidatingDevice
+            ValidatingDevice --> PublishingSingle : Device ON
+            ValidatingDevice --> IgnoringSingle : Device OFF
+            
+            PublishingSingle --> [*]
+            IgnoringSingle --> [*]
+        }
         
-        Idle --> SingleRead: User Clicks Single
-        SingleRead --> WaitingData: Command Sent
-        WaitingData --> ProcessingData: Data Received
-        ProcessingData --> Idle: Complete
+        state TimeSync {
+            [*] --> GettingTime
+            GettingTime --> InternetSync : From Internet
+            GettingTime --> ManualSync : Manual Set
+            
+            InternetSync --> PublishingTime : Send SET TIME
+            ManualSync --> PublishingTime
+            
+            PublishingTime --> UpdatingClock : Update Device Clock
+            UpdatingClock --> [*]
+        }
         
-        Idle --> TimeSettings: User Opens Time Page
-        TimeSettings --> SyncingTime: Internet Sync / Manual Set
-        SyncingTime --> Idle: Time Synced
+        state DataManagement {
+            [*] --> LoadingData
+            LoadingData --> FilteringData : Apply Filters
+            FilteringData --> SortingData : Apply Sorting
+            SortingData --> RenderingTable : Update Display
+            RenderingTable --> [*]
+        }
         
-        Idle --> DataManagement: User Opens Data Page
-        DataManagement --> FilteringData: Apply Filters
-        FilteringData --> LoadingFirebase: Query Database
-        LoadingFirebase --> RenderingTable: Data Loaded
-        RenderingTable --> Idle: Complete
+        state ReceivingData {
+            [*] --> ParsingMessage
+            ParsingMessage --> SystemState : State Message
+            ParsingMessage --> SensorData : Data Message
+            
+            SystemState --> UpdatingUI : Update Device/Periodic State
+            SensorData --> ValidatingData : Check Sensor Values
+            
+            ValidatingData --> UpdatingCharts : Valid Data
+            ValidatingData --> LoggingError : Invalid Data
+            
+            UpdatingCharts --> SavingToFirebase : Store Data
+            SavingToFirebase --> UpdatingTables : Update Live Data
+            UpdatingTables --> [*]
+            
+            LoggingError --> [*]
+            UpdatingUI --> [*]
+        }
+        
+        DeviceControl --> Idle : Complete
+        PeriodicControl --> Idle : Complete
+        SingleRead --> Idle : Complete
+        TimeSync --> Idle : Complete
+        DataManagement --> Idle : Complete
+        ReceivingData --> Idle : Complete
     }
     
-    Ready --> Error: Critical Failure
-    Error --> Ready: Reconnect / Retry
+    OperationalState --> ErrorState : Critical Error
+    ErrorState --> OperationalState : Recovery
+    ErrorState --> ApplicationStartup : Restart Required
     
-    state Error {
-        [*] --> MQTTDisconnected
-        [*] --> FirebaseDisconnected
-        [*] --> SensorFailed
-        [*] --> RTCFailed
+    state ErrorState {
+        [*] --> DiagnosingError
+        DiagnosingError --> MQTTDisconnected : MQTT Error
+        DiagnosingError --> FirebaseDisconnected : Firebase Error
+        DiagnosingError --> UIError : UI Error
         
-        MQTTDisconnected --> Reconnecting: Auto-retry 2s
-        FirebaseDisconnected --> Reconnecting: Auto-retry
-        SensorFailed --> [*]: Continue with Errors
-        RTCFailed --> [*]: Use Local Time
+        MQTTDisconnected --> ReconnectingMQTT : Auto Reconnect
+        FirebaseDisconnected --> ReconnectingFirebase : Auto Reconnect
+        UIError --> RecoveringUI : Restore UI
         
-        Reconnecting --> [*]: Success
+        ReconnectingMQTT --> [*] : Success
+        ReconnectingFirebase --> [*] : Success
+        RecoveringUI --> [*] : Success
+        
+        ReconnectingMQTT --> DiagnosingError : Failed
+        ReconnectingFirebase --> DiagnosingError : Failed
+        RecoveringUI --> DiagnosingError : Failed
     }
 ```
 
----
-
-## 6. UI Component Hierarchy
+## Package Structure UML Diagram
 
 ```mermaid
-graph TB
-    subgraph Body["<body>"]
-        subgraph Sidebar["Sidebar Navigation"]
-            SidebarHeader[Sidebar Header<br/>DataLogger Logo]
-            Menu[Menu Items<br/>- Dashboard<br/>- Live Data<br/>- Device Settings<br/>- Time Settings<br/>- Data Management<br/>- Logs<br/>- Config]
-        end
-        
-        subgraph ContentArea["Content Area"]
-            Header[Header<br/>MQTT Status Badge<br/>Firebase Status Badge]
-            
-            subgraph MainContent["Main Content"]
-                Dashboard[Dashboard Page<br/>- Quick Actions<br/>- Current Reading<br/>- Console Preview<br/>- Temperature Chart<br/>- Humidity Chart]
-                
-                LiveData[Live Data Page<br/>- Filter Controls<br/>- Data Table<br/>- Export Button]
-                
-                DeviceSettings[Device Settings Page<br/>- SHT31 Component Card<br/>- DS3231 Component Card<br/>- Reserved Slots]
-                
-                TimeSettings[Time Settings Page<br/>- Calendar Widget<br/>- Time Picker<br/>- Sync/Set Buttons]
-                
-                DataMgmt[Data Management Page<br/>- Statistics Summary<br/>- Advanced Filters<br/>- Data Table<br/>- Export Button]
-                
-                Logs[Logs Page<br/>- Search Input<br/>- Filter Buttons<br/>- Console Display<br/>- Export/Clear Buttons]
-                
-                Config[Config Page<br/>- MQTT Settings<br/>- Firebase Settings<br/>- Display Preferences<br/>- Chart Settings<br/>- Data Settings]
-            end
-            
-            Footer[Footer<br/>System Time Display]
-        end
-        
-        subgraph Modals["Modal Dialogs"]
-            IntervalModal[Interval Modal<br/>- Minute Picker<br/>- Second Picker<br/>- Set/Cancel Buttons]
-        end
-    end
-    
-    Body --> Sidebar
-    Body --> ContentArea
-    Body --> Modals
-    
-    ContentArea --> Header
-    ContentArea --> MainContent
-    ContentArea --> Footer
-    
-    MainContent --> Dashboard
-    MainContent --> LiveData
-    MainContent --> DeviceSettings
-    MainContent --> TimeSettings
-    MainContent --> DataMgmt
-    MainContent --> Logs
-    MainContent --> Config
-    
-    style Body fill:#F0F9FF
-    style Sidebar fill:#06B6D4,color:#fff
-    style ContentArea fill:#ECFEFF
-    style MainContent fill:#BAE6FD
-    style Modals fill:#22D3EE,color:#fff
-```
-
----
-
-## 7. Data Flow Architecture
-
-```mermaid
-graph LR
-    subgraph Input["Data Input Sources"]
-        MQTT_In[MQTT Messages<br/>singleData<br/>periodicData<br/>systemState]
-        Firebase_Load[Firebase Queries<br/>Load History<br/>Load Filtered Data]
-        User_Input[User Actions<br/>Button Clicks<br/>Form Inputs<br/>Time Settings]
-    end
-    
-    subgraph Processing["Processing Layer"]
-        MessageHandler[handleMQTTMessage<br/>Parse JSON<br/>Validate Data<br/>Check Status]
-        
-        DataValidator[Data Validation<br/>Sensor Check<br/>RTC Check<br/>Error Detection]
-        
-        StateUpdater[State Updates<br/>Update Global Vars<br/>Update Component Health<br/>Sync UI State]
-        
-        DataAggregator[Data Aggregation<br/>Push to Arrays<br/>Calculate Stats<br/>Apply Filters]
-    end
-    
-    subgraph Storage["Data Storage"]
-        Memory[In-Memory Storage<br/>temperatureData<br/>humidityData<br/>logBuffer<br/>liveDataBuffer<br/>filteredDataCache]
-        
-        Firebase_Save[Firebase Database<br/>readings/date/id<br/>Persistent Storage]
-        
-        LocalStorage[Browser LocalStorage<br/>Settings<br/>Preferences]
-    end
-    
-    subgraph Output["Data Output Destinations"]
-        Charts[Chart.js Visualization<br/>Line Charts<br/>Animated Updates]
-        
-        Tables[HTML Tables<br/>Live Data Table<br/>Data Management Table]
-        
-        Console_Log[Console Display<br/>Log Preview<br/>Full Console]
-        
-        UI_Updates[UI Updates<br/>Current Display<br/>Status Badges<br/>Component Cards]
-        
-        Exports[Data Exports<br/>CSV Downloads<br/>Log Exports]
-    end
-    
-    MQTT_In --> MessageHandler
-    Firebase_Load --> DataAggregator
-    User_Input --> StateUpdater
-    
-    MessageHandler --> DataValidator
-    DataValidator --> StateUpdater
-    StateUpdater --> DataAggregator
-    
-    DataAggregator --> Memory
-    DataAggregator --> Firebase_Save
-    StateUpdater --> LocalStorage
-    
-    Memory --> Charts
-    Memory --> Tables
-    Memory --> Console_Log
-    Memory --> UI_Updates
-    Memory --> Exports
-    
-    Firebase_Save -.Sync.-> Firebase_Load
-    
-    style Input fill:#10B981,stroke:#059669,stroke-width:2px,color:#fff
-    style Processing fill:#06B6D4,stroke:#0891B2,stroke-width:2px,color:#fff
-    style Storage fill:#F97316,stroke:#EA580C,stroke-width:2px,color:#fff
-    style Output fill:#8B5CF6,stroke:#7C3AED,stroke-width:2px,color:#fff
-```
-
----
-
-## 8. Event Handling System
-
-```mermaid
-sequenceDiagram
-    participant DOM
-    participant EventListener
-    participant Handler
-    participant State
-    participant UI
-    
-    Note over DOM,UI: User Interaction Events
-    
-    DOM->>EventListener: User clicks button
-    EventListener->>Handler: Dispatch event
-    
-    alt Device Button
-        Handler->>State: Check MQTT connection
-        
-        alt Connected
-            Handler->>State: Toggle isDeviceOn
-            Handler->>MQTT: Publish command
-            Handler->>State: Update button state
-            Handler->>UI: Update button style
-        else Not Connected
-            Handler->>UI: Show error message
-        end
-        
-    else Periodic Button
-        Handler->>State: Check device state
-        
-        alt Device ON
-            Handler->>State: Toggle isPeriodic
-            Handler->>MQTT: Publish command
-            Handler->>State: Update button state
-            Handler->>UI: Update button style
-        else Device OFF
-            Handler->>UI: Show warning
-        end
-        
-    else Single Button
-        Handler->>State: Check device state
-        Handler->>MQTT: Publish SINGLE command
-        Handler->>Logging: Add status message
-        
-    else Time Sync Button
-        Handler->>Browser: Get current time
-        Handler->>State: Update time picker
-        Handler->>UI: Render calendar
-        Handler->>MQTT: Publish SET TIME
-        Handler->>State: Update device clock
-        Handler->>UI: Start clock ticker
-    end
-    
-    Note over DOM,UI: MQTT Message Events
-    
-    MQTT->>EventListener: Message received
-    EventListener->>Handler: handleMQTTMessage
-    
-    Handler->>State: Parse message
-    
-    alt System State
-        Handler->>State: Update isDeviceOn, isPeriodic
-        Handler->>UI: Update button styles
-        
-    else Sensor Data
-        Handler->>State: Update currentTemp, currentHumi
-        Handler->>UI: Update display
-        Handler->>Charts: Push data
-        Handler->>Firebase: Save record
-        Handler->>UI: Update tables
-    end
-    
-    Note over DOM,UI: Navigation Events
-    
-    DOM->>EventListener: Menu item clicked
-    EventListener->>Handler: switchPage
-    
-    Handler->>UI: Hide all pages
-    Handler->>UI: Show selected page
-    Handler->>Handler: Initialize page components
-    Handler->>UI: Bind page-specific events
-    Handler->>UI: Refresh icons
-```
-
----
-
-## 9. Chart Integration Architecture
-
-```mermaid
-graph TB
-    subgraph ChartSystem["Chart.js Integration"]
-        subgraph Config["Chart Configuration"]
-            TempConfig[Temperature Chart Config<br/>- Type: line<br/>- Color: #06B6D4<br/>- Tension: 0.4<br/>- Animation: 750ms]
-            
-            HumiConfig[Humidity Chart Config<br/>- Type: line<br/>- Color: #22D3EE<br/>- Tension: 0.4<br/>- Animation: 750ms]
-        end
-        
-        subgraph DataManagement["Data Management"]
-            TempArray[temperatureData[]<br/>- Max: 50 points<br/>- FIFO buffer<br/>- {value, time}]
-            
-            HumiArray[humidityData[]<br/>- Max: 50 points<br/>- FIFO buffer<br/>- {value, time}]
-            
-            Push[Push Functions<br/>- pushTemperature()<br/>- pushHumidity()<br/>- Lazy init if needed]
-        end
-        
-        subgraph Charts["Chart Instances"]
-            TempChart[tempChart<br/>- Canvas: #tempChart<br/>- Labels: times<br/>- Data: values<br/>- Update: 'active']
-            
-            HumiChart[humiChart<br/>- Canvas: #humiChart<br/>- Labels: times<br/>- Data: values<br/>- Update: 'active']
-        end
-        
-        subgraph Stats["Statistics Display"]
-            Calculate[Calculate Stats<br/>- min = Math.min()<br/>- max = Math.max()<br/>- avg = sum/count]
-            
-            UpdateUI[Update UI Elements<br/>- #tempMin, #tempMax, #tempAvg<br/>- #humiMin, #humiMax, #humiAvg]
-        end
-        
-        subgraph Init["Initialization"]
-            Retry[Retry Logic<br/>- Max 10 attempts<br/>- 500ms interval<br/>- Check canvas ready]
-            
-            LazyInit[Lazy Initialization<br/>- ensureChartsInitialized()<br/>- Called on first push<br/>- Fallback mechanism]
-        end
-    end
-    
-    subgraph DataSource["Data Sources"]
-        MQTT[MQTT Messages<br/>periodicData topic]
-        Firebase[Firebase History<br/>loadHistory()]
-    end
-    
-    subgraph Display["Visual Output"]
-        Canvas1[Canvas Element<br/>#tempChart]
-        Canvas2[Canvas Element<br/>#humiChart]
-        StatsDisplay[Stats Elements<br/>Min/Max/Avg values]
-    end
-    
-    TempConfig --> TempChart
-    HumiConfig --> HumiChart
-    
-    MQTT --> Push
-    Firebase --> Push
-    
-    Push --> TempArray
-    Push --> HumiArray
-    
-    TempArray --> TempChart
-    HumiArray --> HumiChart
-    
-    TempChart --> Canvas1
-    HumiChart --> Canvas2
-    
-    TempChart --> Calculate
-    HumiChart --> Calculate
-    
-    Calculate --> UpdateUI
-    UpdateUI --> StatsDisplay
-    
-    Retry --> TempChart
-    Retry --> HumiChart
-    LazyInit --> TempChart
-    LazyInit --> HumiChart
-    
-    style ChartSystem fill:#06B6D4,stroke:#0891B2,stroke-width:3px
-    style DataSource fill:#10B981,stroke:#059669,stroke-width:2px
-    style Display fill:#F59E0B,stroke:#D97706,stroke-width:2px
-```
-
----
-
-## 10. Settings & Configuration Management
-
-```mermaid
-graph TB
-    subgraph Settings["Settings Management"]
-        subgraph MQTT["MQTT Configuration"]
-            MQTTHost[Host: 127.0.0.1]
-            MQTTPort[Port: 8083]
-            MQTTPath[Path: /mqtt]
-            MQTTUser[Username: DataLogger]
-            MQTTPass[Password: datalogger]
-            MQTTClient[Client ID: web_client_1]
-        end
-        
-        subgraph Firebase["Firebase Configuration"]
-            FBApiKey[API Key]
-            FBProject[Project ID: datalogger-8c5d5]
-            FBDbUrl[Database URL]
-        end
-        
-        subgraph Display["Display Preferences"]
-            TempUnit[Temperature Unit<br/>C / F / K<br/>Default: C]
-            TimeFormat[Time Format<br/>24h / 12h<br/>Default: 24h]
-            DateFormat[Date Format<br/>DD/MM/YYYY<br/>MM/DD/YYYY<br/>YYYY-MM-DD]
-        end
-        
-        subgraph Chart["Chart Settings"]
-            MaxPoints[Max Data Points<br/>Default: 50<br/>Range: 10-200]
-            UpdateInterval[Update Interval (s)<br/>Default: 1<br/>Range: 1-60]
-            SkipErrors[Skip Error Readings<br/>Checkbox<br/>Default: false]
-        end
-        
-        subgraph Data["Data Management"]
-            DefaultInterval[Default Interval (s)<br/>Default: 5<br/>Min: 1]
-            RetentionDays[Retention Days<br/>Default: 30<br/>Min: 1]
-            AutoSave[Auto-save to Firebase<br/>Checkbox<br/>Default: true]
-        end
-    end
-    
-    subgraph Storage["Storage Mechanism"]
-        LocalStorage[Browser LocalStorage<br/>- tempUnit<br/>- timeFormat<br/>- dateFormat<br/>- chartMaxPoints<br/>- chartUpdateInterval<br/>- chartSkipErrors<br/>- dataDefaultInterval<br/>- dataRetentionDays<br/>- dataAutoSave]
-        
-        ConfigObj[MQTT_CONFIG object<br/>FIREBASE_CONFIG object<br/>In-memory during session]
-    end
-    
-    subgraph Actions["Settings Actions"]
-        Load[loadSettingsPage()<br/>Read from localStorage<br/>Populate form inputs]
-        
-        Save[saveSettings()<br/>Write to localStorage<br/>Apply changes]
-        
-        Export[exportSettings()<br/>Create JSON file<br/>Download to browser]
-        
-        Import[importSettings()<br/>Read JSON file<br/>Restore settings]
-        
-        Restore[restoreDefaults()<br/>Reset to factory values<br/>Clear localStorage]
-    end
-    
-    Settings --> LocalStorage
-    Settings --> ConfigObj
-    
-    LocalStorage --> Load
-    Load --> Settings
-    
-    Settings --> Save
-    Save --> LocalStorage
-    
-    Settings --> Export
-    Export --> JSONFile[settings.json]
-    
-    JSONFile --> Import
-    Import --> Settings
-    
-    Restore --> Settings
-    
-    style Settings fill:#8B5CF6,stroke:#7C3AED,stroke-width:3px,color:#fff
-    style Storage fill:#F97316,stroke:#EA580C,stroke-width:2px,color:#fff
-    style Actions fill:#10B981,stroke:#059669,stroke-width:2px,color:#fff
-```
-
----
-
-## 11. Complete Deployment Architecture
-
-```mermaid
-C4Deployment
-    title Web Application Deployment Architecture
-    
-    Deployment_Node(browser, "User Browser", "Chrome/Firefox/Safari") {
-        Container(webapp, "Web Application", "HTML/CSS/JavaScript", "Single-page monitoring dashboard")
-        Container(mqtt_client, "MQTT Client", "mqtt.min.js", "WebSocket MQTT client")
-        Container(firebase_sdk, "Firebase SDK", "firebase-app-compat.js", "Realtime database client")
-        Container(chartjs, "Chart.js", "chart.min.js", "Data visualization library")
+classDiagram
+    namespace Core {
+        class WebApplication
+        class ApplicationState
+        class EventBus
     }
     
-    Deployment_Node(local_network, "Local Network", "192.168.1.x") {
-        Deployment_Node(mqtt_server, "MQTT Server", "Mosquitto") {
-            Container(broker, "MQTT Broker", "Mosquitto 2.x", "Message broker with WebSocket support")
-        }
-        
-        Deployment_Node(esp32_node, "ESP32 Device", "ESP32-WROOM-32") {
-            Container(wifi_bridge, "WiFi Bridge", "ESP-IDF", "MQTT client + UART bridge")
-        }
-        
-        Deployment_Node(stm32_node, "STM32 Device", "STM32F103C8T6") {
-            Container(data_logger, "Data Logger", "STM32 HAL", "Sensor controller + SD buffer")
-        }
+    namespace Communication {
+        class MQTTManager
+        class FirebaseManager
+        class MessageRouter
+        class ConnectionPool
     }
     
-    Deployment_Node(cloud, "Cloud Services", "Google Cloud") {
-        Deployment_Node(firebase, "Firebase", "Google Firebase") {
-            ContainerDb(rtdb, "Realtime Database", "Firebase RTDB", "JSON document store")
-        }
+    namespace DataManagement {
+        class DataManager
+        class DataRecord
+        class FilterSettings
+        class Statistics
+        class DataValidator
     }
     
-    Rel(webapp, mqtt_client, "Uses", "WebSocket")
-    Rel(webapp, firebase_sdk, "Uses", "HTTPS API")
-    Rel(webapp, chartjs, "Uses", "JavaScript API")
+    namespace UserInterface {
+        class UIController
+        class ChartManager
+        class NavigationManager
+        class ComponentRenderer
+    }
     
-    Rel(mqtt_client, broker, "Connects", "ws://127.0.0.1:8083/mqtt")
-    Rel(firebase_sdk, rtdb, "Syncs", "HTTPS + WebSocket")
+    namespace CommandHandling {
+        class CommandHandler
+        class Command
+        class CommandQueue
+        class CommandValidator
+    }
     
-    Rel(broker, wifi_bridge, "Publishes/Subscribes", "MQTT v5.0")
-    Rel(wifi_bridge, data_logger, "Communicates", "UART 115200")
+    namespace StateManagement {
+        class StateManager
+        class DeviceState
+        class ApplicationSettings
+        class StateValidator
+    }
     
-    UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="2")
+    namespace Monitoring {
+        class ComponentHealthMonitor
+        class LoggingSystem
+        class PerformanceMonitor
+        class AlertManager
+    }
+    
+    namespace Utilities {
+        class TimeManager
+        class DataFormatter
+        class ValidationUtils
+        class StorageUtils
+    }
+    
+    %% Package Dependencies
+    Core --> Communication : uses
+    Core --> DataManagement : uses
+    Core --> UserInterface : uses
+    Core --> CommandHandling : uses
+    Core --> StateManagement : uses
+    Core --> Monitoring : uses
+    Core --> Utilities : uses
+    
+    Communication --> DataManagement : transfers data
+    Communication --> StateManagement : updates state
+    Communication --> Monitoring : logs events
+    
+    UserInterface --> DataManagement : displays data
+    UserInterface --> StateManagement : reflects state
+    UserInterface --> CommandHandling : triggers commands
+    UserInterface --> Utilities : formats data
+    
+    CommandHandling --> Communication : sends commands
+    CommandHandling --> StateManagement : updates state
+    CommandHandling --> Monitoring : logs commands
+    
+    StateManagement --> Monitoring : logs state changes
+    StateManagement --> Utilities : validates state
+    
+    Monitoring --> Utilities : formats logs
+    
+    %% Internal Package Relationships
+    WebApplication --> ApplicationState : manages
+    WebApplication --> EventBus : uses
+    
+    MQTTManager --> MessageRouter : uses
+    FirebaseManager --> ConnectionPool : uses
+    
+    DataManager --> DataRecord : manages
+    DataManager --> FilterSettings : applies
+    DataManager --> Statistics : calculates
+    DataManager --> DataValidator : validates
+    
+    UIController --> ChartManager : controls
+    UIController --> NavigationManager : controls
+    UIController --> ComponentRenderer : uses
+    
+    CommandHandler --> Command : creates
+    CommandHandler --> CommandQueue : manages
+    CommandHandler --> CommandValidator : validates
+    
+    StateManager --> DeviceState : manages
+    StateManager --> ApplicationSettings : manages
+    StateManager --> StateValidator : validates
+    
+    ComponentHealthMonitor --> LoggingSystem : logs to
+    ComponentHealthMonitor --> PerformanceMonitor : uses
+    ComponentHealthMonitor --> AlertManager : triggers
 ```
 
 ---
 
-## System Characteristics
+## UML Diagram Conventions
 
-### Architecture Patterns
-- **Frontend**: Single-page application (SPA) with dynamic routing
-- **Communication**: Publish-Subscribe (MQTT), Real-time sync (Firebase)
-- **State Management**: Global variables + component-level state
-- **Data Flow**: Unidirectional (input → processing → storage → output)
-- **UI Pattern**: Component-based with event-driven updates
+### Class Diagram Elements
+- **Classes**: Represented with class name, attributes (-private, +public), and methods
+- **Interfaces**: Marked with `<<interface>>` stereotype
+- **Enumerations**: Marked with `<<enumeration>>` stereotype
+- **Abstract Classes**: Italicized class names
 
-### Technology Stack
-- **Core**: Vanilla JavaScript (ES6+), HTML5, CSS3
-- **Libraries**:
-  - Chart.js 3.9.1 (data visualization)
-  - MQTT.js (WebSocket MQTT client)
-  - Firebase 9.22.0 (realtime database)
-  - Feather Icons (SVG icons)
-  - TailwindCSS CDN (utility-first CSS)
+### Relationship Types
+- **Composition** (`*--`): Strong ownership relationship (lifetime dependency)
+- **Aggregation** (`o--`): Weak ownership relationship (shared ownership)
+- **Association** (`-->`): "uses" or "depends on" relationship
+- **Inheritance** (`<|--`): "extends" or "inherits from" relationship
+- **Realization** (`--|>`): "implements" relationship for interfaces
+- **Dependency** (`..>`): Temporary usage relationship
 
-### Scalability Considerations
-- **Data Buffer Limits**: 50 points (charts), 100 entries (logs/live data)
-- **Firebase Structure**: Daily partitioning (readings/YYYY-MM-DD/)
-- **MQTT QoS**: Level 1 (at-least-once delivery)
-- **Chart Performance**: 750ms animations, debounced updates
-- **Memory Management**: FIFO buffers with automatic cleanup
+### Visibility Modifiers
+- **Public** (`+`): Accessible from outside the class
+- **Private** (`-`): Accessible only within the class
+- **Protected** (`#`): Accessible within class and subclasses
+- **Package** (`~`): Accessible within the same package/namespace
 
-### Security Features
-- **MQTT Authentication**: Username/password (DataLogger/datalogger)
-- **Firebase Rules**: Database access control (must be configured)
-- **WebSocket**: Local network only (127.0.0.1)
-- **No External Exposure**: Web app accesses local broker only
-- **Data Validation**: JSON parsing with error handling
+### Stereotypes Used
+- `<<interface>>`: Interface definition
+- `<<enumeration>>`: Enumerated type
+- `<<abstract>>`: Abstract class that cannot be instantiated
 
-### Responsive Design
-- **Layout**: Fixed 260px sidebar + fluid content area
-- **Theme Support**: Auto dark/light mode via CSS media query
-- **Color Scheme**: Cyan/Aqua primary (#06B6D4) with semantic colors
-- **Breakpoints**: Mobile-friendly (grid-template-columns: auto-fit)
-- **Icon System**: SVG icons (Feather) with automatic replacement
+### Package Organization
+- **Core**: Main application logic and coordination
+- **Communication**: External service integration (MQTT, Firebase)
+- **DataManagement**: Data processing, filtering, and validation
+- **UserInterface**: UI components and display management
+- **CommandHandling**: User action processing and command execution
+- **StateManagement**: Application and device state coordination
+- **Monitoring**: Health monitoring, logging, and alerting
+- **Utilities**: Helper functions and common utilities
 
-### Error Recovery Mechanisms
-- **MQTT**: Auto-reconnect every 2 seconds on disconnect
-- **Firebase**: Auto-reconnect via .info/connected listener
-- **Charts**: Retry init 10 times (500ms interval), lazy init fallback
-- **Sensor Failure**: Continue operation, log errors, mark unhealthy
-- **RTC Failure**: Use browser time as fallback
-- **Network Failure**: Queue operations, retry on reconnect
-
----
-
-**Document Version**: 1.0  
-**Last Updated**: 2025-01-XX  
-**Total Architecture Diagrams**: 11  
-**Coverage**: Complete system architecture from UI to deployment
+### Design Patterns Represented
+- **Observer Pattern**: Event-driven updates throughout the system
+- **Command Pattern**: User actions encapsulated as command objects
+- **State Pattern**: Application state management with transitions
+- **Bridge Pattern**: Communication abstraction for MQTT/Firebase
+- **Facade Pattern**: Simplified interfaces for complex subsystems
+- **Strategy Pattern**: Different data filtering and sorting strategies
