@@ -83,7 +83,7 @@ let stateSync = {
 };
 
 // ====================================================================
-// DISPLAY PREFERENCES STATE
+// CONFIGURATION
 // ====================================================================
 
 // Firebase Configuration
@@ -101,7 +101,6 @@ const MQTT_CONFIG = {
   username: "DataLogger",
   password: "datalogger",
   clientId: "web_client_1",
-  url: "ws://127.0.0.1:8083/mqtt",
   topics: {
     stm32Command: "datalogger/stm32/command",
     relayControl: "datalogger/esp32/relay/control",
@@ -565,8 +564,6 @@ function handleMQTTMessage(topic, payload) {
           time: jsonData.timestamp || 0,
           device: "ESP32_01",
         });
-      } else {
-        console.log("[DATA] Skipped Firebase save (inactive)");
       }
 
       // Update charts only when active and valid values
@@ -574,23 +571,10 @@ function handleMQTTMessage(topic, payload) {
         // Check "Skip error readings" setting
         const skipErrors = localStorage.getItem("chartSkipErrors") === "true";
 
-        if (skipErrors && sensorFailed) {
-          console.log("[CHART] Skipped error reading (Skip Errors enabled)");
-        } else {
-          console.log(
-            `[CHART] Pushing data: temp=${jsonData.temperature}, humi=${jsonData.humidity
-            }, time=${new Date(timestamp).toLocaleTimeString()}`
-          );
+        if (!(skipErrors && sensorFailed)) {
           pushTemperature(jsonData.temperature, true, timestamp);
           pushHumidity(jsonData.humidity, true, timestamp);
         }
-        console.log(
-          `[CHART] Data pushed. TempData length: ${temperatureData.length}, HumiData length: ${humidityData.length}`
-        );
-      } else {
-        console.log(
-          `[CHART] Skipped: mode=${mode}, sensorFailed=${sensorFailed}`
-        );
       }
 
       // Update component health
@@ -756,17 +740,9 @@ function initializeCharts() {
   const tempCanvas = document.getElementById("tempChart");
   const humiCanvas = document.getElementById("humiChart");
 
-  console.log("[CHART] Canvas elements:", {
-    tempCanvas: !!tempCanvas,
-    humiCanvas: !!humiCanvas,
-  });
-
   if (!tempCanvas || !humiCanvas) {
     chartInitRetryCount++;
     if (chartInitRetryCount < maxChartInitRetries) {
-      console.warn(
-        `[CHART] Canvas elements not found! Retrying in 500ms... (${chartInitRetryCount}/${maxChartInitRetries})`
-      );
       setTimeout(initializeCharts, 500);
     } else {
       console.error(
@@ -780,17 +756,9 @@ function initializeCharts() {
   const tempCtx = tempCanvas.getContext("2d");
   const humiCtx = humiCanvas.getContext("2d");
 
-  console.log("[CHART] Canvas contexts:", {
-    tempCtx: !!tempCtx,
-    humiCtx: !!humiCtx,
-  });
-
   if (!tempCtx || !humiCtx) {
     chartInitRetryCount++;
     if (chartInitRetryCount < maxChartInitRetries) {
-      console.warn(
-        `[CHART] Cannot get 2D context! Retrying in 500ms... (${chartInitRetryCount}/${maxChartInitRetries})`
-      );
       setTimeout(initializeCharts, 500);
     } else {
       console.error(
@@ -1005,24 +973,12 @@ function pushTemperature(value, update = true, timestamp = null) {
     temperatureData.shift();
   }
 
-  console.log(
-    `[pushTemperature] Value: ${value}, Update: ${update}, TempChart exists: ${!!tempChart}, Array length: ${temperatureData.length
-    }`
-  );
-
   if (update) {
     if (tempChart) {
       tempChart.data.labels = temperatureData.map((d) => d.time);
       tempChart.data.datasets[0].data = temperatureData.map((d) => d.value);
       tempChart.update("active");
       updateChartStats("temp");
-      console.log(
-        `[pushTemperature] Chart updated with ${temperatureData.length} points`
-      );
-    } else {
-      console.warn(
-        "[pushTemperature] TempChart not initialized yet - data saved, will render when ready"
-      );
     }
   }
 }
@@ -1040,24 +996,12 @@ function pushHumidity(value, update = true, timestamp = null) {
     humidityData.shift();
   }
 
-  console.log(
-    `[pushHumidity] Value: ${value}, Update: ${update}, HumiChart exists: ${!!humiChart}, Array length: ${humidityData.length
-    }`
-  );
-
   if (update) {
     if (humiChart) {
       humiChart.data.labels = humidityData.map((d) => d.time);
       humiChart.data.datasets[0].data = humidityData.map((d) => d.value);
       humiChart.update("active");
       updateChartStats("humi");
-      console.log(
-        `[pushHumidity] Chart updated with ${humidityData.length} points`
-      );
-    } else {
-      console.warn(
-        "[pushHumidity] HumiChart not initialized yet - data saved, will render when ready"
-      );
     }
   }
 }
@@ -1106,24 +1050,16 @@ function clearChartData() {
 // APPLY CHART SETTINGS DYNAMICALLY
 // ====================================================================
 function applyChartSettings() {
-  console.log("[CHART] Applying new settings:", {
-    maxDataPoints,
-    tempDataLength: temperatureData.length,
-    humiDataLength: humidityData.length,
-  });
-
   // Trim temperature data if exceeds new limit
   if (temperatureData.length > maxDataPoints) {
     const removeCount = temperatureData.length - maxDataPoints;
     temperatureData.splice(0, removeCount);
-    console.log(`[CHART] Removed ${removeCount} temperature points`);
   }
 
   // Trim humidity data if exceeds new limit
   if (humidityData.length > maxDataPoints) {
     const removeCount = humidityData.length - maxDataPoints;
     humidityData.splice(0, removeCount);
-    console.log(`[CHART] Removed ${removeCount} humidity points`);
   }
 
   // Update temperature chart
@@ -1132,7 +1068,6 @@ function applyChartSettings() {
     tempChart.data.datasets[0].data = temperatureData.map((d) => d.value);
     tempChart.update("none"); // 'none' = no animation for instant update
     updateChartStats("temp");
-    console.log("[CHART] Temperature chart updated");
   }
 
   // Update humidity chart
@@ -1141,7 +1076,6 @@ function applyChartSettings() {
     humiChart.data.datasets[0].data = humidityData.map((d) => d.value);
     humiChart.update("none");
     updateChartStats("humi");
-    console.log("[CHART] Humidity chart updated");
   }
 
   addStatus(`Charts refreshed with ${maxDataPoints} max points`, "INFO");
@@ -1884,7 +1818,6 @@ function bindCalendarButtons() {
 
 // Global handler for inline onclick buttons in index.html
 function adjustTime(unit, delta) {
-  console.log("[TIME] adjustTime called:", { unit, delta });
   if (unit === "hour") {
     timePickerHour += delta;
     if (timePickerHour < 0) timePickerHour = 23;
@@ -1898,12 +1831,6 @@ function adjustTime(unit, delta) {
     if (timePickerSecond < 0) timePickerSecond = 59;
     if (timePickerSecond > 59) timePickerSecond = 0;
   }
-
-  console.log("[TIME] Updated values:", {
-    hour: timePickerHour,
-    min: timePickerMinute,
-    sec: timePickerSecond,
-  });
   updateTimeDisplay();
 }
 // Also expose on window for completeness
@@ -2339,8 +2266,6 @@ function resetDataFilters() {
 
 // Function to bind Data Management buttons
 function bindDataManagementButtons() {
-  console.log("[DATA] Binding Data Management buttons...");
-
   // Define setQuickFilter locally
   function setQuickFilter(type) {
     const today = new Date();
@@ -2563,7 +2488,6 @@ function renderFullConsole() {
  * Filter logs by type
  */
 function filterLogs(type) {
-  console.log("[LOGS] Filtering by type:", type);
   logFilterType = type;
 
   // Update button styles
@@ -2589,8 +2513,6 @@ function clearLogs() {
   ) {
     return;
   }
-
-  console.log("[LOGS] Clearing all logs...");
 
   // Clear main buffer
   logBuffer = [];
@@ -3112,10 +3034,6 @@ function restoreDefaults() {
 // ====================================================================
 
 function openIntervalModal() {
-  console.log("[INTERVAL] Opening modal with:", {
-    selectedMinute,
-    selectedSecond,
-  });
   document.getElementById("intervalModal").classList.add("active");
   updateIntervalDisplay();
 
@@ -3124,7 +3042,6 @@ function openIntervalModal() {
 }
 
 function closeIntervalModal() {
-  console.log("[INTERVAL] Closing modal");
   document.getElementById("intervalModal").classList.remove("active");
 }
 
@@ -3284,21 +3201,6 @@ function updateFooterClock() {
     
     // Format full datetime using our formatting function
     dateTimeDisplay = formatDateTime(currentDeviceDate);
-
-    // Debug: log every 10 seconds to verify it's updating
-    if (
-      Math.floor(elapsed / 1000) % 10 === 0 &&
-      elapsed > 0 &&
-      elapsed < 1000
-    ) {
-      console.log("[CLOCK] Device time updating:", {
-        deviceClockMs,
-        deviceClockSetAtMs,
-        elapsed,
-        currentDeviceTime,
-        dateTimeDisplay,
-      });
-    }
   } else {
     dateTimeDisplay = "--/--/---- --:--:--";
   }
@@ -3353,7 +3255,6 @@ function runInitialization() {
     MQTT_CONFIG.username = config.username || MQTT_CONFIG.username;
     MQTT_CONFIG.password = config.password || MQTT_CONFIG.password;
     MQTT_CONFIG.clientId = config.clientId || MQTT_CONFIG.clientId;
-    MQTT_CONFIG.url = `ws://${MQTT_CONFIG.host}:${MQTT_CONFIG.port}${MQTT_CONFIG.path}`;
 
     // Update form fields
     document.getElementById("mqttIp").value = MQTT_CONFIG.host;
@@ -3379,7 +3280,6 @@ function runInitialization() {
   }
 
   // Initialize charts FIRST - CRITICAL for rendering
-  console.log("[INIT] Calling initializeCharts()");
   initializeCharts();
   addStatus("Charts initialized", "INFO");
 
@@ -3405,6 +3305,5 @@ if (document.readyState === "loading") {
   window.addEventListener("DOMContentLoaded", runInitialization);
 } else {
   // DOM is already loaded (script loaded after DOM)
-  console.log("[INIT] DOM already loaded, running initialization immediately");
   runInitialization();
 }
