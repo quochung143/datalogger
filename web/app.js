@@ -680,11 +680,11 @@ function updateCurrentDisplay() {
   document.getElementById("currentHumi").textContent =
     currentHumi !== null ? currentHumi.toFixed(1) + "%" : "--";
 
-  // Use formatting function for time
-  const timeStr = lastReadingTimestamp
-    ? formatTime(new Date(lastReadingTimestamp))
-    : "--:--:--";
-  document.getElementById("lastUpdate").textContent = `${timeStr}`;
+  // Use formatting function for full datetime (date + time)
+  const dateTimeStr = lastReadingTimestamp
+    ? formatDateTime(new Date(lastReadingTimestamp))
+    : "--/--/---- --:--:--";
+  document.getElementById("lastUpdate").textContent = dateTimeStr;
 }
 
 // ====================================================================
